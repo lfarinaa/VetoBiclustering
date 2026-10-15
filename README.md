@@ -146,7 +146,7 @@ the trigger to detector design in [AutoDetOpt](https://github.com/lfarinaa/AutoD
 
 ---
 
-**Where to go next.** [`channelBudgetShowcase.ipynb`](https://github.com/lfarinaa/VetoBiclustering/blob/notebooks/examples/channelBudgetShowcase.ipynb) (all of the above, worked through; rendered with its outputs on the `notebooks` branch, source in [`examples/`](examples)) ·
+**Where to go next.** [`examples/channelBudgetShowcase.ipynb`](examples/channelBudgetShowcase.ipynb) (all of the above, worked through) ·
 [User manual](docs/MANUAL.md) · [FINDINGS.md](FINDINGS.md) (results, and issues found in the legacy code) · [`data/README.md`](data/README.md) (provenance) ·
 [`legacy/aeffcalc/`](legacy/aeffcalc) (the C++ trigger and veto algorithms).
 
