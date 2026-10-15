@@ -105,6 +105,10 @@ per-tile backsplash $b_t$, activation rate $r_t$, coincidence window $\tau$.
 All of it is the compact-v2 layout with the earlier PSD of 10 x 10 cm tiles; the later 5 x 30 cm design is not modelled. The February 2023 RoI dump
 (`data/patterns.txt`) could not be reproduced and is kept for reference only; see [`data/README.md`](data/README.md).
 
+<p align="center">
+  <img src="docs/figures/psdRates.png" alt="PSD activation rates per tile recovered from thesis Fig. 4.9, on the unfolded PSD, both layers" width="800">
+</p>
+
 The figures made from the Geant4 photons (backsplash map, efficiency against channels and energy) stay in the notebook until a larger simulation is
 possible; the numbers below come from the same small sample.
 
@@ -128,6 +132,13 @@ so any realistic channel count is lossy. For all 3820 patterns $N_C^*$ is all 13
   reach a third row of the neighbouring faces); in the event RoI, nothing.
 - Without the neighbouring rows the veto is cheap in photons but leaks 11.5% of the event-RoI tiles.
 - **The coincidence window matters as much as the layout**: at 1 µs the accidental hits equal the backsplash, and every veto loses 2-17 points.
+
+<p align="center">
+  <img src="docs/figures/excessVsChannels.png" alt="Event-RoI excess of the optimised channel maps against the number of PSD channels, one curve per number of pattern groups, with the thesis' strategies as points" width="640">
+</p>
+
+The extra tiles in the event RoIs against the budget are pure geometry (the maps themselves were optimised with the false-veto cost, which includes the
+measured backsplash).
 
 **Optimised maps against the budget** ($\varepsilon_{\rm L1}$, $E^{-2}$ photons, $\tau$ = 100 ns; optimised with the greedy search and local refinement).
 With fan-out, a map with $N_G$ groups needs $N_G$ OR channels and the first column applies (each group vetoed by the union of its patterns' RoIs);
