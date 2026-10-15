@@ -62,6 +62,9 @@ To use real costs, pass `cost=` (an array of the matrix's shape: expected false 
 
 Run one with `jupyter nbconvert --to notebook --execute --inplace examples/<name>.ipynb`; the exit code is 0 when every cell ran.
 
+Outputs are stripped from the notebooks on `main` (nbstripout). To show them on GitHub, run the notebooks and then `python tools/publishNotebooks.py`: it
+replaces the branch `notebooks` with a single commit holding the executed copies (outputs included) and force-pushes it; the README links there.
+
 ## 5. The legacy code
 
 `legacy/aeffcalc/algos/` holds the HERD EventAnalysis algorithms (Valerio Formato, Nicola Mori, Luis Fariña, 2019-2024) as copied from `~/AeffCalc/algos`:
