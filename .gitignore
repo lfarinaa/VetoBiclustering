@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+.DS_Store
+
+# Third-party papers kept locally in references/, not versioned (copyright). The bibliography stays tracked.
+references/*.pdf
+references/*.html
+
+# Cached results of the notebooks (regenerable; the photon cache is derived from AeffCalc files that are not part of this repository).
+examples/results/
+.claude/

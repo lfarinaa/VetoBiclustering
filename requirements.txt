@@ -1,0 +1,16 @@
+# Versions the project was developed and tested with.
+numpy>=2.0
+scipy>=1.14
+matplotlib>=3.9
+pillow                 # tools/extractPsdRates.py
+# The planned relaxed (SGD) optimisation, stochastic/README.md
+jax>=0.10
+optax>=0.2.8
+# Reading the Geant4 photon events (stochastic/photonEvents.py)
+uproot>=5
+# Notebook and tooling
+jupyterlab
+ipykernel>=6.29
+nbformat>=5.10
+nbconvert>=7.16
+nbstripout>=0.9
