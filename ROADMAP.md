@@ -4,7 +4,7 @@
 
 1. **Exact Boolean rank per FIT side**: an ILP (scipy's HiGHS) or SAT model of the minimum biclique cover on the deduplicated matrix (tens of rows, a few hundred columns), to close the gap between the fooling-set bound and N_G*.
 2. ~~**The two-view veto**~~ done: the AND per channel realises the tile-level intersection exactly, and the figures of merit are evaluated on the even-odd pairs (FINDINGS 5).
-3. **Hardware constraints of the trigger board**: groups per FIT face and channels per PSD face or layer are supported as labels (FINDINGS 6); still to add: channel counts per board, neighbour-only wiring, fan-out limits, and an objective on the event RoI directly (the search minimises the per-pattern excess).
+3. **Hardware constraints of the trigger board**: groups per FIT face and channels per PSD face or layer are supported as labels (FINDINGS 6); still to add: channel counts per board, neighbour-only wiring, a fan-out limit and a link budget for the fan-out model (where a map is a grouping of the patterns and the wiring is the cost; FINDINGS 9), and an objective on the event RoI directly (the search minimises the per-pattern excess).
 4. **All start planes**: a dump with `startLayer 0` and with the two-step codes (zig-zags 546, 564; steep 544, 566), to see how N_G* and N_C* grow with the trigger acceptance.
 
 ## Stochastic (event-weighted, iterative)
