@@ -1,0 +1,78 @@
+Plugin HerdDataProviders
+Plugin HerdAlgorithms
+Plugin HerdPersistenceServices
+Plugin HerdDataObjects
+Plugin Gamma
+Plugin Uleg
+
+DataProvider GGSDataProvider ggsDataProvider gamma_sphere.sim.root
+  AttachToStore   evStore    event
+  AttachToStore   globStore  global
+
+Persistence HerdRootPersistenceService rootPersistence gamma_sphere.dig.root
+  Book mcTruth        event evStore
+  Book caloHitsMC     event  evStore
+  Book caloGeoParams global globStore
+  # Book fitHitsCollMC      event  evStore
+  Book fitParticleHitsCollMC      event  evStore
+  # Book fitHitsCollADC      event  evStore
+  # Book fitChannelInfoColl global globStore
+  # Book fitParticleHitsCollADC      event  evStore
+  Book fitGeoParamsColl global globStore
+  # Book scdHitsCollMC      event  evStore
+  Book scdGeoParamsColl global globStore
+  Book psdHitsCollMC      event  evStore
+  Book psdGeoParamsColl global globStore
+  # Book fitMatHitsColl event evStore
+  Book fitMatHitsCollMC event evStore
+  Book fitMatHitsCollNoMainPair event evStore
+  Book fitMatHitsCollOnlyMainPair event evStore
+  Book fitMatHitsCollNoMainMats event evStore
+  Book fitMatHitsCollTh event evStore
+  # Book fitMatHitsColl* event evStore
+  Book EDep* global globStore
+  Book pattern*Map global globStore
+
+EventLoop @@@N_start @@@Nevent
+  # Set printModulo 1
+  Algo ScdGeometricDigitizerAlgo scdGeomDig
+    Set pitch 0.0150
+  Algo PsdGeometricDigitizerAlgo psdGeomDig
+    # Set topAggrFactorX  4
+    # Set topAggrFactorY  4
+    # Set latAggrFactorXY 4
+    # Set latAggrFactorZ  1
+  Algo FitDigitizerAlgo fitDig
+    # Set topMatsSize 9.78
+    # Set sideShortMatsSize 9.78
+    # Set sideLongMatsSize 9.78
+    Set nTopMatsPerLayer 12
+    Set nSideShortMatsPerLayer 10
+    Set nSideLongMatsPerLayer 8
+  # Algo FitMatDig fitMatDig
+  Algo FitMatDigFromPart fitMatDigFromPart
+    Set threshold 1e-4 # in GeV
+    Set ignore_neutrons true
+  # Algo FitMatDigFromPart fitMatDigFromPartNoMainPair
+  #   Set ignore_neutrons true
+  #   Set ignore_two true
+  #   Set matHitsCollName fitMatHitsCollNoMainPair
+  # Algo FitMatDigFromPart fitMatDigFromPartNoMainMats
+  #   Set ignore_neutrons true
+  #   # Set ignore_two true
+  #   Set remove_main_mats true
+  #   Set matHitsCollName fitMatHitsCollNoMainMats
+  # Algo FitMatDigFromPart fitMatDigFromPartOnlyMainPair
+  #   Set ignore_neutrons true
+  #   Set only_two true
+  #   Set matHitsCollName fitMatHitsCollOnlyMainPair
+  #   # Set threshold 1e-4 # in GeV
+  # Algo FitMatDigFromPart fitMatDigFromPartTh
+  #   Set ignore_neutrons true
+  #   Set threshold 1e-4 # in GeV
+  #   Set matHitsCollName fitMatHitsCollTh
+  # Algo ProduceRoIMap produceRoIMap
+  #   Set startLayer 0
+  #   Set ignoreIDs {544,546,564,566}
+  #   Set dumpPatterns true
+  #   Set requireCalo true

@@ -1,0 +1,175 @@
+Plugin HerdDataProviders
+Plugin HerdDataObjects
+Plugin Gamma
+Plugin HerdPersistenceServices
+
+DataProvider HerdRootDataProvider rootProvider gamma_sphere.dig.root
+  AttachToStore   evStore    event
+  AttachToStore   globStore  global
+
+Persistence HerdRootPersistenceService rootPersistence gamma_sphere.analyzed.root
+#  Book caloHisto*     global  globStore
+  Book Etrue* global  globStore
+#  Book theta* global  globStore
+#  Book simu_angle_theta* global  globStore
+  Book IncidentAngleEdged global globStore
+  Book Crossedfaces global globStore
+  Book HistoIncidentAngle* global globStore
+  # Book initial* global globStore
+  # Book coord* global globStore
+  # Book momentum* global globStore
+  Book sphere* global globStore
+  Book angle_simu global globStore
+  Book N_tot* global globStore
+  Book EDist* global globStore
+  # Book ETheta* global globStore
+  Book EtrueIncidentAngle_* global globStore
+  Book ZConv* global globStore
+  Book Mat* global globStore
+  Book EventMat* global globStore
+  Book PsdDist* global globStore
+  Book Triggers* global globStore
+  Book FirstTriggers* global globStore
+  Book TriggerArrays*Events global globStore
+  Book TriggerArrays*Sides global globStore
+  Book LegTrigger* global globStore
+  Book PsdRoiVeto* global globStore
+  Book RawPsiVeto* global globStore
+  Book MultiRoiVeto* global globStore
+  Book SaveEAngles* global globStore
+  Book psdHitsData global globStore
+  Book fitHitsData global globStore
+#  Book LayerNumberFirstInteraction* global  globStore
+#  Book FitHitLayerClosestDistToPrimary* global  globStore
+
+EventLoop  #0 10000 #80000 10000
+  # Produce histograms for all the events
+# Produce histograms for selected events (by Calo)
+  Sequence Main
+  Algo SaveEAngles SaveEAngles
+  Algo SelectIncidentFace SelectIncidentFace
+  Algo SelectSidesToStudy selectSidesToStudy
+  # Algo RejectUpgoing rejectUpgoing
+  Algo RejectCrossTiangong rejectCrossTiangong
+  Algo CountHits countHits
+  Algo PSDVeto Uncut
+    Filter off
+
+
+    ##Gammas fiducial sample definition
+  # Algo CaloEDepCut CaloEDepCut
+  # Algo FiducialPositiveSampleCut FiducialPositiveSampleCut
+  #   # Set sidesToStudy {4}
+  # Algo CheckTriggerInTracker checktriggerintracker
+  # Algo SaveEAngles SaveEAnglesFiducial
+    ##Gammas fiducial sample definition
+
+
+
+  Algo TriggerArrays Base
+    Filter on
+  Algo PsdRoiVeto Base
+    Filter off
+  Algo MultiRoiVeto Base
+    Filter off
+
+    # Algo LEGTriggerESave LegTrigger
+    #   Filter off
+    #
+    # Algo TriggerArrays TriggerArraysFullSpan
+    #   Filter off
+    #   Set force_full_spanning true
+  Algo TriggerArrays NoPlusMinus
+    Filter off
+    Set ignore_pattern_IDs {546,564}
+  Algo PsdRoiVeto NoPlusMinus
+    Filter off
+    Set triggerAlgoName NoPlusMinus
+  Algo MultiRoiVeto NoPlusMinus
+    Filter off
+    Set triggerAlgoName NoPlusMinus
+
+
+  Algo TriggerArrays NoPlusPlus
+    Filter off
+    Set ignore_pattern_IDs {544,546,564,566}
+  Algo PsdRoiVeto NoPlusPlus
+    Filter off
+    Set triggerAlgoName NoPlusPlus
+  Algo MultiRoiVeto NoPlusPlus
+    Filter off
+    Set triggerAlgoName NoPlusPlus
+
+  Algo TriggerArrays NoPlus
+    Filter off
+    Set maxDelta 0
+  Algo PsdRoiVeto NoPlus
+    Filter off
+    Set triggerAlgoName NoPlus
+  Algo MultiRoiVeto NoPlus
+    Filter off
+    Set triggerAlgoName NoPlus
+  Algo TriggerArrays Calo
+    Filter off
+    Set ignore_pattern_IDs {544,546,564,566}
+    Set layer_start 8
+    Set require_calo_in_roi true
+
+  Algo PsdRoiVeto Calo
+    Filter off
+    Set triggerAlgoName Calo
+  Algo MultiRoiVeto Calo
+    Filter off
+    Set triggerAlgoName Calo
+
+
+  Algo TriggerArrays NoUpwards
+    Filter off
+    Set ignore_pattern_IDs {544,546,564,566}
+    Set layer_start 8
+    Set require_calo_in_roi true
+    Set removeUpwardsPatterns true
+
+  Algo PsdRoiVeto NoUpwards
+    Filter off
+    Set triggerAlgoName NoUpwards
+  Algo MultiRoiVeto NoUpwards
+    Filter off
+    Set triggerAlgoName NoUpwards
+    Set fullPsdCheckTh 0
+
+
+
+  Algo TriggerArrays NoUpwardsPlus
+    Filter off
+    Set ignore_pattern_IDs {544,546,564,566}
+    Set layer_start 8
+    Set require_calo_in_roi true
+    Set removeUpwardsPatterns true
+    Set removeAlmostUpwardsPatterns true
+
+  Algo PsdRoiVeto NoUpwardsPlus
+    Filter off
+    Set triggerAlgoName NoUpwardsPlus
+  Algo MultiRoiVeto NoUpwardsPlus
+    Filter off
+    Set triggerAlgoName NoUpwardsPlus
+
+  Algo TriggerArrays NoUpwardsWithPlusPlus
+    Filter off
+    Set ignore_pattern_IDs {546,564}
+    Set layer_start 8
+    Set require_calo_in_roi true
+    Set removeUpwardsPatterns true
+
+  Algo PsdRoiVeto NoUpwardsWithPlusPlus
+    Filter off
+    Set triggerAlgoName NoUpwardsWithPlusPlus
+  Algo MultiRoiVeto NoUpwardsWithPlusPlus
+    Filter off
+    Set triggerAlgoName NoUpwardsWithPlusPlus
+
+    # Algo TriggerArrays TriggerArraysVeto
+    #   Filter off
+    # Algo ProduceRoIMap ProduceRoIMap
+  EndSequence
