@@ -40,17 +40,30 @@ $$
 
 The groups $g$ and channels $c$ cut $M$ into an $N_G\times N_C$ checkerboard of blocks; a block is switched on ($S_{kl}=1$) as soon as it contains one RoI
 tile, so the veto mask $V_{it}=S_{g(i)c(t)}\ge M_{it}$ never misses an RoI tile, and the objective is the cost of the zeros inside the switched-on blocks.
-Equivalently $V=G\,S\,H^\top$ with $G$, $H$ one-hot assignment matrices: a **Boolean co-clustering (biclustering)** of $M$ with **one-sided error**,
-a weighted, block-constant Boolean approximation from above. It is combinatorial and NP-hard in general, like co-clustering, so it is solved heuristically
-(below), except at zero cost: $V=M$ is reachable iff $N_G\ge N_G^*$, the number of distinct rows of $M$, and $N_C\ge N_C^*$, the number of distinct columns.
+
+**Problem class.** A **constrained co-clustering (biclustering)** of a binary matrix, namely:
+
+| Aspect | This problem |
+|---|---|
+| Matrix | the binary pattern x tile incidence matrix $M$ ($P\times T$ = 1780 x 1328 for the thesis selection), with a non-negative weight matrix $C$ of the same shape |
+| Variables | two hard partitions, of the rows (patterns into $N_G$ groups) and of the columns (tiles into $N_C$ channels); $S$ follows from them |
+| Model | Boolean matrix tri-factorisation $V = G\,S\,H^\top$ (Boolean product), $G\in\{0,1\}^{P\times N_G}$ and $H\in\{0,1\}^{T\times N_C}$ cluster-indicator matrices (one 1 per row), $S\in\{0,1\}^{N_G\times N_C}$ |
+| Constraints | cardinality: at most $N_G$ row and $N_C$ column clusters; covering: $V\ge M$ elementwise (one-sided, no false negatives); optionally cannot-link labels (below) |
+| Objective | weighted one-sided Hamming distance $\langle C,\,V-M\rangle$, linear in $V$ |
+| Complexity | NP-hard in general, like co-clustering; an integer program in principle, solved here by agglomerative merging and local search (good local optima, not certified) |
+| Closed form | zero cost, $V=M$, iff $N_G\ge N_G^*$ = distinct rows of $M$ and $N_C\ge N_C^*$ = distinct columns |
+
+With one side fixed it reduces to an ordinary clustering: for fixed channels, grouping the patterns is a $k$-clustering ($k=N_G$) of the rows of the
+channel-level matrix, each cluster represented by the OR of its members, and the cost of a point its weighted distance up to that OR.
 
 Other variants are different problems and only mentioned here:
 
 - **Fan-out** (the thesis' layout: a tile may be wired to several groups, e.g. each face's veto ORs its own tiles and the adjacent rows of its neighbours).
-  Each group gets its own OR of the union of its RoIs, so only the patterns are clustered, a one-sided clustering of the rows of $M$ with union costs,
-  and the budget moves into the wiring (tile-to-group links). Covering $M$ exactly with the fewest all-ones blocks is a **set cover**: the minimum
+  Each group gets its own OR of the union of its RoIs, so only the patterns are clustered: a one-sided clustering of the rows of $M$ (the special case
+  $N_C=T$ above), with the budget moved into the wiring (tile-to-group links). Covering $M$ exactly with the fewest all-ones blocks is a **set cover**: the minimum
   biclique cover, or Boolean rank, of $M$.
-- **Hardware constraints** (a channel confined to one PSD face, a group to one FIT face): the same problem with labels no group or channel may cross.
+- **Hardware constraints** (a channel confined to one PSD face, a group to one FIT face): the same problem with cannot-link constraints between
+  differently labelled rows or columns.
 - **The event-level objective**: the true figure of merit is $\varepsilon_{\rm L1}$ on photons, through the two-view AND of Eq. 4.2; the per-pattern cost
   $C$ above is its proxy for the search.
 
