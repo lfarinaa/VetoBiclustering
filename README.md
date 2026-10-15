@@ -26,13 +26,17 @@ cost photons (backsplash and accidental hits there now veto); tiles in the RoI b
 
 ## What kind of problem it is
 
-- **Each tile wired to one channel** (the default here): a **co-clustering**, or biclustering, of the pattern x tile matrix $M$, hence the name. Its 0%-loss
-  minimum is closed form (below).
-- **A tile may feed several OR channels** (fan-out in the trigger logic): a **set cover**. The elements are the pairs (pattern, tile in its RoI), the sets
-  are the all-ones blocks of $M$ (a group of patterns x a set of tiles all of them contain), and the minimum number of blocks is the minimum biclique cover,
-  or Boolean rank, of $M$ (NP-hard; bounded here).
-- **Under a channel budget**: a budgeted co-clustering whose errors may only add tiles to masks (no RoI tile dropped), weighted by what each added tile
-  costs in photons.
+Two hardware models, and the answer depends on which one the trigger board implements:
+
+- **Fan-out: a tile may be wired to several groups** (the thesis' layout: each face's veto ORs its own tiles and the adjacent rows of its neighbours, so
+  edge tiles feed two or three faces). Each group is one OR channel over its own tile set, so a map is just a grouping of the patterns, and the budget is
+  the number of groups $N_G$ plus the wiring: tile-to-group links and the fan-out per tile. Covering exactly every RoI with as few all-ones blocks of $M$
+  as possible (a group of patterns x a set of tiles all of them contain) is a **set cover**, the minimum biclique cover or Boolean rank of $M$ (NP-hard;
+  bounded here).
+- **Partition: each tile's signal goes to exactly one channel**, channels routed to groups ($S$ below). A **co-clustering**, or biclustering, of the
+  pattern x tile matrix $M$, hence the name; its 0%-loss minimum is closed form, and overlapping masks cost extra channels (the thesis' 5 face masks split
+  the tiles into 17 distinct sets).
+- **Under a budget**, either way: errors may only add tiles to masks (no RoI tile dropped), weighted by what each added tile costs in photons.
 
 ## Notation and mathematics
 
@@ -73,7 +77,7 @@ so any realistic channel count is lossy. For all 3820 patterns $N_C^*$ is all 13
 
 **The thesis' strategies on Geant4 photons** ($\varepsilon_{\rm L1}$ of L0-triggered fiducial photons; $\xi_{\rm ev}$, $\kappa_{\rm ev}$: added and missing tiles of the event RoIs):
 
-| Strategy | $N_G$ | $N_C$ | $\xi_{\rm ev}$ | $\kappa_{\rm ev}$ | $\varepsilon_{\rm L1}$, $E^{-2}$, no accidentals | $\varepsilon_{\rm L1}$, $E^{-2}$, $\tau$ = 100 ns | $\varepsilon_{\rm L1}$, $E^{-2}$, $\tau$ = 1 µs | $\varepsilon_{\rm L1}$, log-uniform, 100 ns |
+| Strategy | $N_G$ = OR channels (fan-out) | tile channels (partition) | $\xi_{\rm ev}$ | $\kappa_{\rm ev}$ | $\varepsilon_{\rm L1}$, $E^{-2}$, no accidentals | $\varepsilon_{\rm L1}$, $E^{-2}$, $\tau$ = 100 ns | $\varepsilon_{\rm L1}$, $E^{-2}$, $\tau$ = 1 µs | $\varepsilon_{\rm L1}$, log-uniform, 100 ns |
 |---|---|---|---|---|---|---|---|---|
 | exact RoI | 1126 | 1326 | 0 | 0 | 0.990 | 0.988 | 0.970 | 0.825 |
 | full PSD veto | 1 | 1 | 14.9 | 0 | 0.901 | 0.880 | 0.710 | 0.486 |
@@ -81,8 +85,9 @@ so any realistic channel count is lossy. For all 3820 patterns $N_C^*$ is all 13
 | **face + 2 rows (thesis)** | 5 | **17** | 4.41 | 0 | 0.955 | 0.947 | 0.881 | 0.660 |
 | face, union of its RoIs | 5 | 17 | 4.30 | 0 | 0.956 | 0.949 | 0.884 | 0.663 |
 
-- The two-row hybrid needs **17 channels, not 5**: the face masks overlap along the edges and split the tiles into 17 signatures. Per view it misses
-  0.4% of the RoI tiles (side RoIs reach a third row of the neighbouring faces); in the event RoI, nothing.
+- The two-row hybrid is **5 OR channels with fan-out**: 2048 tile-to-group links, 624 tiles wired to two or three faces (at most 3). Without fan-out
+  the same masks need 17 tile channels, since the overlaps split the tiles into 17 distinct sets. Per view it misses 0.4% of the RoI tiles (side RoIs
+  reach a third row of the neighbouring faces); in the event RoI, nothing.
 - Without the neighbouring rows the veto is cheap in photons but leaks 11.5% of the event-RoI tiles.
 - **The coincidence window matters as much as the layout**: at 1 µs the accidental hits equal the backsplash, and every veto loses 2-17 points.
 
@@ -90,7 +95,9 @@ so any realistic channel count is lossy. For all 3820 patterns $N_C^*$ is all 13
   <img src="docs/figures/efficiencyVsChannels.png" alt="L1 efficiency (E^-2 and log-uniform photons) and event-RoI excess of optimised channel maps against the number of PSD channels, one curve per number of pattern groups, with the thesis' strategies as points" width="980">
 </p>
 
-**Optimised maps against the budget** ($\varepsilon_{\rm L1}$, $E^{-2}$ photons, $\tau$ = 100 ns; optimised with the greedy search and local refinement):
+**Optimised maps against the budget** ($\varepsilon_{\rm L1}$, $E^{-2}$ photons, $\tau$ = 100 ns; optimised with the greedy search and local refinement).
+With fan-out, a map with $N_G$ groups needs $N_G$ OR channels and the first column applies (each group vetoed by the union of its patterns' RoIs);
+the other columns are the partition model with $N_C$ tile channels:
 
 | $N_G$ \ $N_C$ | 1326 | 256 | 64 | 32 | 17 | 8 | 4 | 1 |
 |---|---|---|---|---|---|---|---|---|
@@ -100,8 +107,11 @@ so any realistic channel count is lossy. For all 3820 patterns $N_C^*$ is all 13
 | 16 | 0.966 | 0.969 | 0.969 | 0.963 | 0.958 | 0.943 | 0.936 | 0.880 |
 | 5 | 0.949 | 0.949 | 0.949 | 0.949 | 0.949 | 0.945 | 0.939 | 0.880 |
 
-- **At its own budget the thesis' layout is what the optimiser finds**: no search at $N_G=5$, $N_C=17$ beats the union of each face's RoIs (0.949).
-- **Beyond it, add groups, not channels**: with 5 groups nothing improves above 17 channels; 16 groups and 64 channels give 0.969, 256 groups and 64 channels 0.984.
+- **At its own budget the thesis' layout is what the optimiser finds**: with 5 groups the best is the union of each face's RoIs (0.949), and the
+  two-row hybrid is within 0.002 of it.
+- **Beyond it, add groups**: with fan-out, 16 groups give 0.966 (5120 tile-to-group links, fan-out up to 9), 64 groups 0.977 (14 953 links, up to 23),
+  256 groups 0.987 (50 663 links, up to 69); the wiring, not the OR channels, becomes the cost. Without fan-out, 5 groups gain nothing above 17 tile
+  channels; 16 groups and 64 channels give 0.969, 256 groups and 64 channels 0.984.
 - **One board per face costs**: confining each channel to one PSD face lowers 0.949 to 0.945 at (5, 17) and 0.943 to 0.920 at (5, 8).
 - The figure of merit counts photons, not tiles. Losses grow steeply with energy: with the exact RoI veto they start above 1 GeV, with the full-PSD veto
   already at 0.2 GeV ([energy dependence](docs/figures/efficiencyVsEnergy.png), cf. thesis Fig. 4.5).

@@ -72,3 +72,8 @@ weighted to E^-2 (examples/channelBudgetShowcase.ipynb; README for the tables).
 - **Energy dependence**: exact RoI 1.00 up to 0.3 GeV, 0.86 at 3-10 GeV, 0.45 at 30-100 GeV; full PSD 0.83 already at 0.1-0.3 GeV and 0.06 at 30-100 GeV.
 - **The E^-2 backsplash map is dominated by a few low-energy photons** (a handful of hot tiles): the per-tile values are a rough estimate.
 - **Run time**: the budget grid takes about 25 minutes, the constrained solutions a few minutes with the groups-first order and the per-face seed; the interleaved order is too slow at this size (it rebuilds a full table per merge) and is left to the CLI.
+
+## 9. Correction: the thesis' layout is 5 channels with fan-out (2026-10-15)
+
+- The thesis allows overlap: each of the 5 face groups ORs its own tile set (its face plus adjacent rows), and edge tiles are wired to several groups. "17 channels, not 5" (sections 5, 8 and the first README) counted channels in the partition model, where each tile's signal goes to one channel only; it is not a flaw of the thesis' layout. With fan-out the two-row hybrid is 5 OR channels, 2048 tile-to-group links, 624 tiles fanned out to 2-3 groups.
+- With fan-out a map is a grouping of the patterns with union masks, i.e. the N_C = N_C* column of the budget grid: 5 groups 0.949 (the face union; two rows 0.947), 16 groups 0.966 (5120 links, fan-out up to 9), 64 groups 0.977 (14 953, up to 23), 256 groups 0.987 (50 663, up to 69). The hardware cost then sits in the wiring, which the search does not yet constrain (ROADMAP).
