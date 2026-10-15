@@ -26,46 +26,56 @@ cost photons (backsplash and accidental hits there now veto); tiles in the RoI b
 
 ## The problem
 
-**Given** the RoI matrix $M\in\{0,1\}^{P\times T}$ ($P$ patterns, $T$ tiles, $M_{it}=1$ iff $t\in\{T\}_i$), a cost $C_{it}\ge 0$ of adding tile $t$ to the
-veto of pattern $i$, and budgets $N_G$, $N_C$,
+**Given** the RoI matrix $M\in\{0,1\}^{P\times T}$ ($P$ patterns, $T$ tiles, $M_{it}=1$ iff $t\in\{T\}_i$), budgets $N_G$, $N_C$, and two costs per entry,
+one for each way a mask can be wrong:
+
+- $C^+_{it}\ge 0$, a **false veto**: tile $t$ vetoes pattern $i$ although it is not in its RoI, and photons are lost (backsplash, accidental hits): **signal loss**;
+- $C^-_{it}\ge 0$, a **leak**: an RoI tile of pattern $i$ no longer vetoes it, and charged particles get through: **more background**.
+
+Find
 
 $$
-\min_{g,\;c}\;\sum_{i=1}^{P}\sum_{t=1}^{T} C_{it}\,\big(S_{g(i)c(t)}-M_{it}\big)
-\qquad\text{over}\qquad g:[P]\to[N_G],\quad c:[T]\to[N_C],
+\min_{g,\;c,\;S}\;\sum_{i=1}^{P}\sum_{t=1}^{T}\Big[\,C^+_{it}\,(1-M_{it})\,V_{it} \;+\; C^-_{it}\,M_{it}\,(1-V_{it})\Big],
+\qquad V_{it}=S_{g(i)c(t)},
 $$
 
 $$
-\text{with the routing}\qquad S_{kl}=\max_{\,i\in g^{-1}(k),\;t\in c^{-1}(l)} M_{it}\qquad(\text{0 for an empty block}).
+g:[P]\to[N_G],\qquad c:[T]\to[N_C],\qquad S\in\{0,1\}^{N_G\times N_C}.
 $$
 
-The groups $g$ and channels $c$ cut $M$ into an $N_G\times N_C$ checkerboard of blocks; a block is switched on ($S_{kl}=1$) as soon as it contains one RoI
-tile, so the veto mask $V_{it}=S_{g(i)c(t)}\ge M_{it}$ never misses an RoI tile, and the objective is the cost of the zeros inside the switched-on blocks.
+The groups $g$ and channels $c$ cut $M$ into an $N_G\times N_C$ checkerboard of blocks, and the mask is constant on each block. For fixed partitions the
+routing decouples block by block: a block is switched on iff the leaks it would cause outweigh the false vetoes,
+$S_{kl}=1 \iff \sum_{\rm block} C^-_{it}M_{it}\ \ge\ \sum_{\rm block} C^+_{it}(1-M_{it})$, so the search is over the two partitions only.
+
+**What is solved so far** is the no-leak limit $C^-\to\infty$: a block is on as soon as it holds one RoI tile ("union routing", $S_{kl}=\max_{\rm block} M_{it}$),
+$V\ge M$, and only the false-veto cost remains. Leak costs need charged-particle events, and none are left (see [Limitations](#limitations)); with
+them, sweeping $C^-/C^+$ traces the trade-off between photon efficiency and background rejection for each budget ([ROADMAP](ROADMAP.md)).
 
 **Problem class.** A **constrained co-clustering (biclustering)** of a binary matrix, namely:
 
 | Aspect | This problem |
 |---|---|
-| Matrix | the binary pattern x tile incidence matrix $M$ ($P\times T$ = 1780 x 1328 for the thesis selection), with a non-negative weight matrix $C$ of the same shape |
-| Variables | two hard partitions, of the rows (patterns into $N_G$ groups) and of the columns (tiles into $N_C$ channels); $S$ follows from them |
-| Model | Boolean matrix tri-factorisation $V = G\,S\,H^\top$ (Boolean product), $G\in\{0,1\}^{P\times N_G}$ and $H\in\{0,1\}^{T\times N_C}$ cluster-indicator matrices (one 1 per row), $S\in\{0,1\}^{N_G\times N_C}$ |
-| Constraints | cardinality: at most $N_G$ row and $N_C$ column clusters; covering: $V\ge M$ elementwise (one-sided, no false negatives); optionally cannot-link labels (below) |
-| Objective | weighted one-sided Hamming distance $\langle C,\,V-M\rangle$, linear in $V$ |
+| Matrix | the binary pattern x tile incidence matrix $M$ ($P\times T$ = 1780 x 1328 for the thesis selection), with two non-negative weight matrices $C^\pm$ of the same shape |
+| Variables | two hard partitions, of the rows (patterns into $N_G$ groups) and of the columns (tiles into $N_C$ channels), and the block values $S$ |
+| Model | Boolean matrix tri-factorisation $V = G\,S\,H^\top$ (Boolean product), $G\in\{0,1\}^{P\times N_G}$ and $H\in\{0,1\}^{T\times N_C}$ cluster-indicator matrices (one 1 per row), $S\in\{0,1\}^{N_G\times N_C}$: a block-constant binary approximation of $M$ |
+| Constraints | cardinality: at most $N_G$ row and $N_C$ column clusters; optionally cannot-link labels (below); in the no-leak limit, covering $V\ge M$ |
+| Objective | weighted asymmetric Hamming distance between $V$ and $M$: false positives (signal loss) and false negatives (background) priced separately |
 | Complexity | NP-hard in general, like co-clustering; an integer program in principle, solved here by agglomerative merging and local search (good local optima, not certified) |
 | Closed form | zero cost, $V=M$, iff $N_G\ge N_G^*$ = distinct rows of $M$ and $N_C\ge N_C^*$ = distinct columns |
 
 With one side fixed it reduces to an ordinary clustering: for fixed channels, grouping the patterns is a $k$-clustering ($k=N_G$) of the rows of the
-channel-level matrix, each cluster represented by the OR of its members, and the cost of a point its weighted distance up to that OR.
+channel-level matrix, each cluster represented by a binary centre (the OR of its members in the no-leak limit, a weighted majority in general), the cost of a point its weighted distance to that centre.
 
 Other variants are different problems and only mentioned here:
 
 - **Fan-out** (the thesis' layout: a tile may be wired to several groups, e.g. each face's veto ORs its own tiles and the adjacent rows of its neighbours).
-  Each group gets its own OR of the union of its RoIs, so only the patterns are clustered: a one-sided clustering of the rows of $M$ (the special case
+  Each group gets its own OR channel over any tile set (the union of its RoIs in the no-leak limit), so only the patterns are clustered: a clustering of the rows of $M$ (the special case
   $N_C=T$ above), with the budget moved into the wiring (tile-to-group links). Covering $M$ exactly with the fewest all-ones blocks is a **set cover**: the minimum
   biclique cover, or Boolean rank, of $M$.
 - **Hardware constraints** (a channel confined to one PSD face, a group to one FIT face): the same problem with cannot-link constraints between
   differently labelled rows or columns.
-- **The event-level objective**: the true figure of merit is $\varepsilon_{\rm L1}$ on photons, through the two-view AND of Eq. 4.2; the per-pattern cost
-  $C$ above is its proxy for the search.
+- **The event-level objective**: the true figure of merit is $\varepsilon_{\rm L1}$ on photons, through the two-view AND of Eq. 4.2; the per-entry costs
+  $C^\pm$ above are its proxy for the search.
 
 ## Notation and mathematics
 
@@ -78,9 +88,9 @@ per-tile backsplash $b_t$, activation rate $r_t$, coincidence window $\tau$.
   $\bigvee_t h_t V_{it}V_{jt}=\bigvee_l h_l S_{g(i)l}S_{g(j)l}$ ($h_l$: the OR of the channel's tiles), and the thesis' factorisation carries over channel by channel.
 - **0% loss.** $V=M$ needs identical RoIs within a group and identical RoI memberships within a channel: $N_G\ge N_G^*$ = distinct rows of $M$,
   $N_C\ge N_C^*$ = distinct columns, both reached at once by grouping duplicates.
-- **Below the minimum.** "Union routing" ($S_{kl}=1$ if any tile of channel $l$ is in any RoI of group $k$) never drops an RoI tile; every tile it adds costs
+- **Below the minimum.** Union routing (the no-leak limit) never drops an RoI tile; every tile it adds costs
   photons twice: backsplash ($b_t$, steeply rising with energy) and accidental hits of the ~190 Hz per tile background inside the coincidence window,
-  $q_t = 1-e^{-r_t A\tau}$. Hence the cost in [the problem](#the-problem), $C_{it}=-\ln\big[(1-b_t)(1-q_t)\big]$ (the log of the photon survival probability).
+  $q_t = 1-e^{-r_t A\tau}$. Hence the false-veto cost in [the problem](#the-problem), $C^+_{it}=-\ln\big[(1-b_t)(1-q_t)\big]$ (minus the log of the photon survival probability).
 - **Figure of merit**: $\varepsilon_{\rm L1}$ **measured on Geant4 photons**, the fraction of L0-triggered fiducial photons that pass L1 with the map, accidentals included.
 
 ## The data
@@ -153,7 +163,7 @@ python tools/findChannelMap.py --strategy face-rows --rows 2 --events           
 ```
 
 The search (greedy merges in several orders with exact merge costs, a one-group-per-face seed, local refinement) returns good local optima, not certified
-ones. Hardware constraints enter as labels no merge may cross; `--cost` accepts any per-pattern, per-tile cost matrix.
+ones. Hardware constraints enter as labels no merge may cross; `--cost` accepts any per-pattern, per-tile false-veto cost matrix.
 
 ## Limitations
 
