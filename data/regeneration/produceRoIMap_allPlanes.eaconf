@@ -1,0 +1,18 @@
+Plugin HerdDataProviders
+Plugin HerdAlgorithms
+Plugin HerdDataObjects
+Plugin Gamma
+
+DataProvider GGSDataProvider ggsDataProvider sim2023.root
+  AttachToStore   evStore    event
+  AttachToStore   globStore  global
+
+EventLoop 0 1
+  Algo PsdGeometricDigitizerAlgo psdGeomDig
+  Algo FitDigitizerAlgo fitDig
+    Set nTopMatsPerLayer 12
+    Set nSideShortMatsPerLayer 10
+    Set nSideLongMatsPerLayer 8
+  Algo ProduceRoIMap produceRoIMap
+    Set startLayer 0
+    Set dumpPatterns true

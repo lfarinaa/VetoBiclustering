@@ -1,0 +1,55 @@
+##########################
+# Basic simulation setup #
+##########################
+/GGS/rndmPrintModulo 100
+##### Setup the particle generator #####
+/GGS/generatorActions/set gun                          # Use the GGS gun generator
+#/GGS/generatorActions/gun/checkAcceptance true
+/GGS/generatorActions/gun/particle gamma               # Shoot photons...
+#/GGS/generatorActions/gun/energy 10 GeV                # ... of 10 GeV ...
+/GGS/generatorActions/gun/minEnergy 10 GeV
+/GGS/generatorActions/gun/maxEnergy 10 GeV
+/GGS/generatorActions/gun/spectralIndex -1
+/GGS/generatorActions/gun/minTheta 0 deg               # ... with a polar angle between 0 ...
+/GGS/generatorActions/gun/maxTheta 90 deg              # ... and 90 deg ...
+/GGS/generatorActions/gun/minPhi 0 deg                 # ... and an azimuthal angle between 0 ...
+/GGS/generatorActions/gun/maxPhi 360 deg               # ... and 360 deg ...
+/GGS/generatorActions/gun/sphereCenter 0 0 -16 cm
+/GGS/generatorActions/gun/sphereCapPosition 0 0 160 cm
+/GGS/generatorActions/gun/sphereCapExtension 180 deg
+
+##### Setup the sensitive detectors #####
+/GGS/scoring/addGGSIntHitSD Crystal                     # Add integrated hits for LYSO crystals
+
+/GGS/scoring/addGGSIntHitSD topFitMatCore                  # Add integrated hits for top FIT mat
+/GGS/scoring/topFitMatCore.GGSIntHitSD/storeParticleHits   # Store also particle hits
+
+/GGS/scoring/addGGSIntHitSD sideFitMatCore                 # Add integrated hits for side FIT mat
+/GGS/scoring/sideFitMatCore.GGSIntHitSD/storeParticleHits  # Store also particle hits
+
+/GGS/scoring/addGGSIntHitSD scdSiWaferTop                  # Add integrated hits for Si wafers on top SCD
+/GGS/scoring/scdSiWaferTop.GGSIntHitSD/storeParticleHits   # Store also particle hits
+
+/GGS/scoring/addGGSIntHitSD scdSiWaferSideH                # Add integrated hits for Si wafers on side SCD, horizontal strips
+/GGS/scoring/scdSiWaferSideH.GGSIntHitSD/storeParticleHits # Store also particle hits
+/GGS/scoring/addGGSIntHitSD scdSiWaferSideV                # Add integrated hits for Si wafers on side SCD, vertical strips
+/GGS/scoring/scdSiWaferSideV.GGSIntHitSD/storeParticleHits # Store also particle hits
+
+/GGS/scoring/addGGSIntHitSD tiletopPSD                  # Add integrated hits for top PSD tiles
+/GGS/scoring/addGGSIntHitSD tilesidePSD                 # Add integrated hits for side PSD tiles
+
+##### Setup the output on ROOT file #####
+/GGS/userActions/addGGSHitsAction                                             # Save hits
+#/GGS/userActions/hitsAction/setHitThreshold topFitMatCore  particle -1 GeV   # Uncomment to save also particle hits with null energy release on top FIT
+#/GGS/userActions/hitsAction/setHitThreshold sideFitMatCore particle -1 GeV   # Uncomment to save also particle hits with null energy release on side FIT
+#/GGS/userActions/hitsAction/setHitThreshold scdSiWaferTop  particle -1 GeV   # Uncomment to save also particle hits with null energy release on top SCD
+#/GGS/userActions/hitsAction/setHitThreshold scdSiWaferSideH particle -1 GeV  # Uncomment to save also particle hits with null energy release on side SCD
+#/GGS/userActions/hitsAction/setHitThreshold scdSiWaferSideV particle -1 GeV  # Uncomment to save also particle hits with null energy release on side SCD
+/GGS/userActions/addGGSMCTruthAction                                          # Save MC truth
+
+/GGS/userActions/addGGSHadrIntAction
+/GGS/userActions/addGGSPrimaryDisAction                                       # Save hits
+/GGS/userActions/primaryDisAction/outProducts true                            # Save hits
+
+##### Shoot 2 particles #####
+/run/beamOn 2

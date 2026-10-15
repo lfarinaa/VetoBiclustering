@@ -1,0 +1,20 @@
+--- /dev/fd/63	2026-10-15 15:54:47.609997599 +0200
++++ UlegGeomPsdRoi.h	2026-10-15 15:06:08.081097225 +0200
+@@ -139,7 +139,7 @@
+     // auto rightLine = *std::max_element(vRightLines.begin(),vRightLines.end(),[_fitTransVec,_fitNormalVec](Herd::Line l1, Herd::Line l2) {return l1.Direction()*_fitTransVec/(l1.Direction()*_fitTransVec*_fitTransVec+l1.Direction()*_fitNormalVec*_fitNormalVec).Mag()<l2.Direction()*_fitTransVec/(l2.Direction()*_fitTransVec*_fitTransVec+l2.Direction()*_fitNormalVec*_fitNormalVec).Mag();});
+     // std::cout << "left: " << leftLine.Origin() << " + t" << leftLine.Direction() << '\n';
+     // std::cout << "right: " << rightLine.Origin() << " + t" << rightLine.Direction() << '\n';
+-    _crossPoint = leftLine.Intersection(rightLine).value();
++    _crossPoint = leftLine.Intersection(rightLine);
+     // auto y=(unsigned long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()%1000000-x;
+ 
+     // std::cout << "geomRoi: " << y << '\n';
+@@ -269,7 +269,7 @@
+         std::vector<int> tilesInLayer;
+         auto psdGeoParams = psdGeoParamsVector[iPsdLayer];
+         auto tileDimensions = Herd::Vec3D(psdGeoParams.Sizes()[Herd::RefFrame::Axis::X],psdGeoParams.Sizes()[Herd::RefFrame::Axis::Y],psdGeoParams.Sizes()[Herd::RefFrame::Axis::Z]);
+-        auto psdNormalVec = Herd::Vec3D(psdGeoParams.NormalDirection());
++        auto psdNormalVec = Herd::Vec3D(psdGeoParams.Normal());
+         auto psdMainVec = Herd::Vec3D(psdGeoParams.SegmentationDirections().first);
+         auto psdSecVec = Herd::Vec3D(psdGeoParams.SegmentationDirections().second);
+         for (size_t psdTileID = 0; psdTileID < psdGeoParams.NTotElements(); psdTileID++) { // rewrite with an std magic (foreach?) with early return

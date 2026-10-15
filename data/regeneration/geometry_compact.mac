@@ -1,0 +1,69 @@
+###### geometry-compact-v2.mac ######
+
+# GGSPenny geometry datacard for compact-v2 detector layout.
+# Same as compact-v1, with adjusted FIT sizes to minimize dead
+# areas after digitization using the correct number of mats (12
+# for TOP, 8 long and 10 short for sides).
+# See:
+#   https://git.recas.ba.infn.it/herd/HerdSoftware/-/issues/275
+
+# Define the sub-detectors
+/herd/geometry/parametric/general/calorimeter calo_v2
+/herd/geometry/parametric/general/tracker fit
+/herd/geometry/parametric/general/antiCoincidence psd_v2
+/herd/geometry/parametric/general/chargeID scd
+/herd/geometry/parametric/general/calibration trd
+
+# TOP detectors distances
+/herd/geometry/parametric/general/caloTopFitDistance 5 cm
+/herd/geometry/parametric/general/topFitTopPsdDistance 2 cm
+/herd/geometry/parametric/general/topPsdTopScdDistance 2 cm
+
+# SIDE detectors distances
+/herd/geometry/parametric/general/caloSideXFitDistance 4.1 cm
+/herd/geometry/parametric/general/caloSideYFitDistance 5 cm
+/herd/geometry/parametric/general/sideFitSidePsdDistance 5 cm
+/herd/geometry/parametric/general/sidePsdSideScdDistance 4 cm
+
+# CALO parameters
+
+# FIT parameters
+/herd/geometry/parametric/fit/nTopLayers 7
+/herd/geometry/parametric/fit/nSideLayers 7
+/herd/geometry/parametric/fit/xSideHPos -8.5 cm
+/herd/geometry/parametric/fit/ySideHPos -6.5 cm
+/herd/geometry/parametric/fit/xSideVPos -35 cm
+/herd/geometry/parametric/fit/ySideVPos -35 cm
+## We assume a mat size of 9.78 mm
+/herd/geometry/parametric/fit/topPlaneSize 117.36 cm   # 12 mats
+/herd/geometry/parametric/fit/sidePlaneSizeH 97.8 cm  # 10 mats
+/herd/geometry/parametric/fit/sidePlaneSizeV 78.24 cm  #  8 mats
+
+# PSD parameters
+/herd/geometry/parametric/psd/type tiles
+/herd/geometry/parametric/psd/topThickness 0.5 cm
+/herd/geometry/parametric/psd/nTopTileLayers 2
+/herd/geometry/parametric/psd/nTopTilesAlongX 14
+/herd/geometry/parametric/psd/nTopTilesAlongY 14
+/herd/geometry/parametric/psd/topTileGapX 250 um
+/herd/geometry/parametric/psd/topTileGapY 2 mm
+/herd/geometry/parametric/psd/sideThickness 0.5 cm
+/herd/geometry/parametric/psd/nSideTileLayers 2
+/herd/geometry/parametric/psd/nSideTilesAlongH 13
+/herd/geometry/parametric/psd/nSideTilesAlongV 9
+/herd/geometry/parametric/psd/sideTileGapH 2 mm
+/herd/geometry/parametric/psd/sideTileGapV 250 um
+/herd/geometry/parametric/psd/xSideHPos 3.5 cm
+/herd/geometry/parametric/psd/ySideHPos 2.5 cm
+/herd/geometry/parametric/psd/xSideVPos -22. cm
+/herd/geometry/parametric/psd/ySideVPos -22. cm
+
+# SCD parameters and positions
+/herd/geometry/parametric/scd/siliconThickness 300 um
+/herd/geometry/parametric/scd/nTopWafers 17
+/herd/geometry/parametric/scd/nSideWafersH 16
+/herd/geometry/parametric/scd/nSideWafersV  10
+/herd/geometry/parametric/scd/xSideHPos 2.5 cm
+/herd/geometry/parametric/scd/xSideVPos -15 cm
+/herd/geometry/parametric/scd/ySideHPos 2.5 cm
+/herd/geometry/parametric/scd/ySideVPos -15 cm

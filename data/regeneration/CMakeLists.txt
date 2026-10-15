@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.13)
+project(RoIMapDump CXX)
+find_package(EventAnalysis REQUIRED)
+find_package(HerdSoftware REQUIRED)
+find_package(ROOT REQUIRED)
+include(${ROOT_USE_FILE})
+add_library(Gamma SHARED ProduceRoIMap.cpp)
+target_link_libraries(Gamma HerdDataObjects HerdUtils EA::EACore EA::EAAlgorithm EA::EAPlugin EA::EAUtils ${ROOT_LIBRARIES})
