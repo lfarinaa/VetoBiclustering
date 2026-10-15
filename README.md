@@ -24,19 +24,35 @@ Both signals are merged: patterns into $N_G$ **groups** (one veto decision each)
 channels veto which group. Pattern $i$ is then vetoed by the mask $V_{it}=S_{g(i)c(t)}$ instead of its RoI $M_{it}$. Tiles in the mask but not in the RoI
 cost photons (backsplash and accidental hits there now veto); tiles in the RoI but not in the mask let charged particles through.
 
-## What kind of problem it is
+## The problem
 
-Two hardware models, and the answer depends on which one the trigger board implements:
+**Given** the RoI matrix $M\in\{0,1\}^{P\times T}$ ($P$ patterns, $T$ tiles, $M_{it}=1$ iff $t\in\{T\}_i$), a cost $C_{it}\ge 0$ of adding tile $t$ to the
+veto of pattern $i$, and budgets $N_G$, $N_C$,
 
-- **Fan-out: a tile may be wired to several groups** (the thesis' layout: each face's veto ORs its own tiles and the adjacent rows of its neighbours, so
-  edge tiles feed two or three faces). Each group is one OR channel over its own tile set, so a map is just a grouping of the patterns, and the budget is
-  the number of groups $N_G$ plus the wiring: tile-to-group links and the fan-out per tile. Covering exactly every RoI with as few all-ones blocks of $M$
-  as possible (a group of patterns x a set of tiles all of them contain) is a **set cover**, the minimum biclique cover or Boolean rank of $M$ (NP-hard;
-  bounded here).
-- **Partition: each tile's signal goes to exactly one channel**, channels routed to groups ($S$ below). A **co-clustering**, or biclustering, of the
-  pattern x tile matrix $M$, hence the name; its 0%-loss minimum is closed form, and overlapping masks cost extra channels (the thesis' 5 face masks split
-  the tiles into 17 distinct sets).
-- **Under a budget**, either way: errors may only add tiles to masks (no RoI tile dropped), weighted by what each added tile costs in photons.
+$$
+\min_{g,\;c}\;\sum_{i=1}^{P}\sum_{t=1}^{T} C_{it}\,\big(S_{g(i)c(t)}-M_{it}\big)
+\qquad\text{over}\qquad g:[P]\to[N_G],\quad c:[T]\to[N_C],
+$$
+
+$$
+\text{with the routing}\qquad S_{kl}=\max_{\,i\in g^{-1}(k),\;t\in c^{-1}(l)} M_{it}\qquad(\text{0 for an empty block}).
+$$
+
+The groups $g$ and channels $c$ cut $M$ into an $N_G\times N_C$ checkerboard of blocks; a block is switched on ($S_{kl}=1$) as soon as it contains one RoI
+tile, so the veto mask $V_{it}=S_{g(i)c(t)}\ge M_{it}$ never misses an RoI tile, and the objective is the cost of the zeros inside the switched-on blocks.
+Equivalently $V=G\,S\,H^\top$ with $G$, $H$ one-hot assignment matrices: a **Boolean co-clustering (biclustering)** of $M$ with **one-sided error**,
+a weighted, block-constant Boolean approximation from above. It is combinatorial and NP-hard in general, like co-clustering, so it is solved heuristically
+(below), except at zero cost: $V=M$ is reachable iff $N_G\ge N_G^*$, the number of distinct rows of $M$, and $N_C\ge N_C^*$, the number of distinct columns.
+
+Other variants are different problems and only mentioned here:
+
+- **Fan-out** (the thesis' layout: a tile may be wired to several groups, e.g. each face's veto ORs its own tiles and the adjacent rows of its neighbours).
+  Each group gets its own OR of the union of its RoIs, so only the patterns are clustered, a one-sided clustering of the rows of $M$ with union costs,
+  and the budget moves into the wiring (tile-to-group links). Covering $M$ exactly with the fewest all-ones blocks is a **set cover**: the minimum
+  biclique cover, or Boolean rank, of $M$.
+- **Hardware constraints** (a channel confined to one PSD face, a group to one FIT face): the same problem with labels no group or channel may cross.
+- **The event-level objective**: the true figure of merit is $\varepsilon_{\rm L1}$ on photons, through the two-view AND of Eq. 4.2; the per-pattern cost
+  $C$ above is its proxy for the search.
 
 ## Notation and mathematics
 
@@ -51,7 +67,7 @@ per-tile backsplash $b_t$, activation rate $r_t$, coincidence window $\tau$.
   $N_C\ge N_C^*$ = distinct columns, both reached at once by grouping duplicates.
 - **Below the minimum.** "Union routing" ($S_{kl}=1$ if any tile of channel $l$ is in any RoI of group $k$) never drops an RoI tile; every tile it adds costs
   photons twice: backsplash ($b_t$, steeply rising with energy) and accidental hits of the ~190 Hz per tile background inside the coincidence window,
-  $q_t = 1-e^{-r_t A\tau}$. The search minimises $\sum_{it}(V-M)_{it}\,C_{it}$ with $C_{it}=-\ln\big[(1-b_t)(1-q_t)\big]$.
+  $q_t = 1-e^{-r_t A\tau}$. Hence the cost in [the problem](#the-problem), $C_{it}=-\ln\big[(1-b_t)(1-q_t)\big]$ (the log of the photon survival probability).
 - **Figure of merit**: $\varepsilon_{\rm L1}$ **measured on Geant4 photons**, the fraction of L0-triggered fiducial photons that pass L1 with the map, accidentals included.
 
 ## The data
@@ -66,9 +82,8 @@ per-tile backsplash $b_t$, activation rate $r_t$, coincidence window $\tau$.
 All of it is the compact-v2 layout with the earlier PSD of 10 x 10 cm tiles; the later 5 x 30 cm design is not modelled. The February 2023 RoI dump
 (`data/patterns.txt`) could not be reproduced and is kept for reference only; see [`data/README.md`](data/README.md).
 
-<p align="center">
-  <img src="docs/figures/ratesBacksplash.png" alt="PSD activation rates per tile from thesis Fig. 4.9 and the backsplash measured on Geant4 photons, on the unfolded PSD" width="950">
-</p>
+The figures made from the Geant4 photons (backsplash map, efficiency against channels and energy) stay in the notebook until a larger simulation is
+possible; the numbers below come from the same small sample.
 
 ## Results
 
@@ -91,10 +106,6 @@ so any realistic channel count is lossy. For all 3820 patterns $N_C^*$ is all 13
 - Without the neighbouring rows the veto is cheap in photons but leaks 11.5% of the event-RoI tiles.
 - **The coincidence window matters as much as the layout**: at 1 µs the accidental hits equal the backsplash, and every veto loses 2-17 points.
 
-<p align="center">
-  <img src="docs/figures/efficiencyVsChannels.png" alt="L1 efficiency (E^-2 and log-uniform photons) and event-RoI excess of optimised channel maps against the number of PSD channels, one curve per number of pattern groups, with the thesis' strategies as points" width="980">
-</p>
-
 **Optimised maps against the budget** ($\varepsilon_{\rm L1}$, $E^{-2}$ photons, $\tau$ = 100 ns; optimised with the greedy search and local refinement).
 With fan-out, a map with $N_G$ groups needs $N_G$ OR channels and the first column applies (each group vetoed by the union of its patterns' RoIs);
 the other columns are the partition model with $N_C$ tile channels:
@@ -114,7 +125,7 @@ the other columns are the partition model with $N_C$ tile channels:
   channels; 16 groups and 64 channels give 0.969, 256 groups and 64 channels 0.984.
 - **One board per face costs**: confining each channel to one PSD face lowers 0.949 to 0.945 at (5, 17) and 0.943 to 0.920 at (5, 8).
 - The figure of merit counts photons, not tiles. Losses grow steeply with energy: with the exact RoI veto they start above 1 GeV, with the full-PSD veto
-  already at 0.2 GeV ([energy dependence](docs/figures/efficiencyVsEnergy.png), cf. thesis Fig. 4.5).
+  already at 0.2 GeV (cf. thesis Fig. 4.5).
 
 ## The program
 
