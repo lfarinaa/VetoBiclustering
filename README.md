@@ -2,17 +2,21 @@
 
 ### How few channels does the ULEG L1 veto need? Merging 3IR patterns and PSD tiles without losing what the region-of-interest veto is for
 
+> [!NOTE]
+> **Work in progress.** The analytic stage is in place: the problem, its exact 0%-loss solution, and a search that finds good (not provably optimal)
+> maps for any channel budget. The stochastic stage, which takes these maps as seeds, needs a fresh simulation and is still to come ([Next](#next)).
+
 <p align="center">
   <img src="docs/figures/eventRoi3d.png" alt="The PSD of HERD as the five faces of a cube; the RoIs of an even-view and an odd-view top-FIT pattern and their intersection, the event RoI" width="900">
 </p>
 
 The ultra-low-energy gamma-ray trigger of HERD (ULEG; [thesis](#references), chapter 4) fires on **3IR patterns**, three hit FIT mats in consecutive same-view
-planes, and at L1 vetoes the event when a PSD tile fires inside the pattern's **region of interest (RoI)** $\{T\}_i$: the tiles a charged particle producing
+planes, and at L1 vetoes the event when a PSD tile fires inside the pattern's **region of interest (RoI)** $`\{T\}_i`$: the tiles a charged particle producing
 that pattern must have crossed. Vetoing on the RoI rather than the whole PSD saves the photons whose calorimeter shower splashes back onto tiles far from
 the track. Implemented literally, it is one veto line per pattern listening to its own tiles: **1780 patterns and 1328 tiles** for the thesis' 3IR
 definition, far beyond the channels of a trigger board. The thesis proposed instead to *"predefine groups of PSD tiles and associate them with subsets of
 3IR patterns"*, for instance one veto decision per detector face extended by up to two rows of the neighbouring faces (section 4.2.2). This project
-quantifies that choice and finds the best maps for any channel budget.
+quantifies that choice and finds good maps for any channel budget.
 
 ```
  3IR patterns i ──► N_G pattern groups g(i) ──┐
@@ -20,78 +24,115 @@ quantifies that choice and finds the best maps for any channel budget.
  PSD tiles t    ──► N_C channels c(t)       ──┘
 ```
 
-Both signals are merged: patterns into $N_G$ **groups** (one veto decision each), tiles into $N_C$ **channels** (an OR of tiles), and a routing $S$ says which
-channels veto which group. Pattern $i$ is then vetoed by the mask $V_{it}=S_{g(i)c(t)}$ instead of its RoI $M_{it}$. Tiles in the mask but not in the RoI
+Both signals are merged: patterns into $`N_G`$ **groups** (one veto decision each), tiles into $`N_C`$ **channels** (an OR of tiles), and a routing $`S`$ says which
+channels veto which group. Pattern $`i`$ is then vetoed by the mask $`V_{it}=S_{g(i)c(t)}`$ instead of its RoI $`M_{it}`$. Tiles in the mask but not in the RoI
 cost photons (backsplash and accidental hits there now veto); tiles in the RoI but not in the mask let charged particles through.
 
 ## The problem
 
-**Given** the RoI matrix $M\in\{0,1\}^{P\times T}$ ($P$ patterns, $T$ tiles, $M_{it}=1$ iff $t\in\{T\}_i$), budgets $N_G$, $N_C$, and two costs per entry,
+**Given** the RoI matrix $`M\in\{0,1\}^{P\times T}`$ ($`P`$ patterns, $`T`$ tiles, $`M_{it}=1`$ iff $`t\in\{T\}_i`$), budgets $`N_G`$, $`N_C`$, and two costs per entry,
 one for each way a mask can be wrong:
 
-- $C^+_{it}\ge 0$, a **false veto**: tile $t$ vetoes pattern $i$ although it is not in its RoI, and photons are lost (backsplash, accidental hits): **signal loss**;
-- $C^-_{it}\ge 0$, a **leak**: an RoI tile of pattern $i$ no longer vetoes it, and charged particles get through: **more background**.
+- $`C^+_{it}\ge 0`$, a **false veto**: tile $`t`$ vetoes pattern $`i`$ although it is not in its RoI, and photons are lost (backsplash, accidental hits): **signal loss**;
+- $`C^-_{it}\ge 0`$, a **leak**: an RoI tile of pattern $`i`$ no longer vetoes it, and charged particles get through: **more background**.
 
-Find
+**Find**
 
-$$
-\min_{g,\;c,\;S}\;\sum_{i=1}^{P}\sum_{t=1}^{T}\Big[\,C^+_{it}\,(1-M_{it})\,V_{it} \;+\; C^-_{it}\,M_{it}\,(1-V_{it})\Big],
-\qquad V_{it}=S_{g(i)c(t)},
-$$
+```math
+\min_{g,\,c,\,S}\;\sum_{i=1}^{P}\sum_{t=1}^{T}\Big[\,C^+_{it}\,(1-M_{it})\,V_{it} \;+\; C^-_{it}\,M_{it}\,(1-V_{it})\Big],
+\qquad V_{it}=S_{g(i)\,c(t)},
+```
 
-$$
-g:[P]\to[N_G],\qquad c:[T]\to[N_C],\qquad S\in\{0,1\}^{N_G\times N_C}.
-$$
+```math
+g:\{1,\dots,P\}\to\{1,\dots,N_G\},\qquad c:\{1,\dots,T\}\to\{1,\dots,N_C\},\qquad S\in\{0,1\}^{N_G\times N_C}.
+```
 
-The groups $g$ and channels $c$ cut $M$ into an $N_G\times N_C$ checkerboard of blocks, and the mask is constant on each block. For fixed partitions the
+The groups $`g`$ and channels $`c`$ cut $`M`$ into an $`N_G\times N_C`$ checkerboard of blocks, and the mask is constant on each block. For fixed partitions the
 routing decouples block by block: a block is switched on iff the leaks it would cause outweigh the false vetoes,
-$S_{kl}=1 \iff \sum_{\rm block} C^-_{it}M_{it}\ \ge\ \sum_{\rm block} C^+_{it}(1-M_{it})$, so the search is over the two partitions only.
 
-**What is solved so far** is the no-leak limit $C^-\to\infty$: a block is on as soon as it holds one RoI tile ("union routing", $S_{kl}=\max_{\rm block} M_{it}$),
-$V\ge M$, and only the false-veto cost remains. Leak costs need charged-particle events, and none are left (see [Limitations](#limitations)); with
-them, sweeping $C^-/C^+$ traces the trade-off between photon efficiency and background rejection for each budget ([ROADMAP](ROADMAP.md)).
+```math
+S_{kl}=1 \iff \sum_{i\in g^{-1}(k)}\;\sum_{t\in c^{-1}(l)} C^-_{it}\,M_{it}\;\ge\;\sum_{i\in g^{-1}(k)}\;\sum_{t\in c^{-1}(l)} C^+_{it}\,(1-M_{it}),
+```
 
-**Problem class.** A **constrained co-clustering (biclustering)** of a binary matrix, namely:
+so the search is over the two partitions only.
+
+**What is solved so far** is the no-leak limit $`C^-\to\infty`$: a block is on as soon as it holds one RoI tile ("union routing", $`S_{kl}=\max_{\rm block} M_{it}`$),
+so $`V\ge M`$ and only the false-veto cost remains. Leak costs need charged-particle events, and none are left (see [Limitations](#limitations)).
+
+**Problem class.** A **constrained co-clustering (biclustering)** of a binary matrix:
 
 | Aspect | This problem |
 |---|---|
-| Matrix | the binary pattern x tile incidence matrix $M$ ($P\times T$ = 1780 x 1328 for the thesis selection), with two non-negative weight matrices $C^\pm$ of the same shape |
-| Variables | two hard partitions, of the rows (patterns into $N_G$ groups) and of the columns (tiles into $N_C$ channels), and the block values $S$ |
-| Model | Boolean matrix tri-factorisation $V = G\,S\,H^\top$ (Boolean product), $G\in\{0,1\}^{P\times N_G}$ and $H\in\{0,1\}^{T\times N_C}$ cluster-indicator matrices (one 1 per row), $S\in\{0,1\}^{N_G\times N_C}$: a block-constant binary approximation of $M$ |
-| Constraints | cardinality: at most $N_G$ row and $N_C$ column clusters; optionally cannot-link labels (below); in the no-leak limit, covering $V\ge M$ |
-| Objective | weighted asymmetric Hamming distance between $V$ and $M$: false positives (signal loss) and false negatives (background) priced separately |
-| Complexity | NP-hard in general, like co-clustering; an integer program in principle, solved here by agglomerative merging and local search (good local optima, not certified) |
-| Closed form | zero cost, $V=M$, iff $N_G\ge N_G^*$ = distinct rows of $M$ and $N_C\ge N_C^*$ = distinct columns |
+| Matrix | the binary pattern x tile incidence matrix $`M`$ ($`P\times T`$ = 1780 x 1328 for the thesis selection), with two non-negative weight matrices $`C^\pm`$ of the same shape |
+| Variables | two hard partitions, of the rows (patterns into $`N_G`$ groups) and of the columns (tiles into $`N_C`$ channels), and the block values $`S`$ |
+| Model | Boolean matrix tri-factorisation $`V = G\,S\,H^\top`$ (Boolean product), $`G\in\{0,1\}^{P\times N_G}`$ and $`H\in\{0,1\}^{T\times N_C}`$ cluster-indicator matrices (one 1 per row), $`S\in\{0,1\}^{N_G\times N_C}`$: a block-constant binary approximation of $`M`$ |
+| Constraints | cardinality: at most $`N_G`$ row and $`N_C`$ column clusters; optionally cannot-link labels (below); in the no-leak limit, covering $`V\ge M`$ |
+| Objective | weighted asymmetric Hamming distance between $`V`$ and $`M`$: false positives (signal loss) and false negatives (background) priced separately |
+| Exact solution | only at zero cost: $`V=M`$ iff $`N_G\ge N_G^*`$ = distinct rows of $`M`$ and $`N_C\ge N_C^*`$ = distinct columns |
 
-With one side fixed it reduces to an ordinary clustering: for fixed channels, grouping the patterns is a $k$-clustering ($k=N_G$) of the rows of the
-channel-level matrix, each cluster represented by a binary centre (the OR of its members in the no-leak limit, a weighted majority in general), the cost of a point its weighted distance to that centre.
+With one side fixed it reduces to an ordinary clustering: for fixed channels, grouping the patterns is a $`k`$-clustering ($`k=N_G`$) of the rows of the
+channel-level matrix, each cluster represented by a binary centre (the OR of its members in the no-leak limit, a weighted majority in general), the cost
+of a point its weighted distance to that centre.
 
-Other variants are different problems and only mentioned here:
+### How hard it is
+
+**Below the 0%-loss point there is no exact solution, and the maps found here are not guaranteed to be optimal.**
+
+- **The general problem is NP-hard.** With equal costs ($`C^+=C^-=1`$) it is the *monochromatic bi-clustering* of Wulff, Urner and Ben-David (2013),
+  proven NP-hard; the weighted problem contains it. They also give an approximation scheme for that equal-cost case; whether it carries over to these
+  weights is not checked here.
+- **The no-leak limit**, the version solved so far, has no proof of hardness here, and no polynomial algorithm is known to us; it is treated as hard.
+- **Exhaustive search is out of the question.** At $`(N_G, N_C) = (5, 8)`$ there are about $`10^{1242}`$ ways to group the 1780 patterns and $`10^{1195}`$
+  ways to split the 1328 tiles. With one group per FIT face and every channel inside one PSD face, the tile splits alone still exceed $`10^{200}`$.
+- **No optimality certificate.** The search (greedy merges, a one-group-per-face seed, local refinement) has no lower bound below the 0%-loss point, so
+  the gap to the optimum is unknown. Two checks so far: different merge orders and seeds land on the same cost for every constrained budget below,
+  and at 5 groups the search recovers the thesis' face layout on its own. Neither is a proof.
+
+On top of this, the combinatorial problem is only a proxy: the real figure of merit is the event-level $`\varepsilon_{\rm L1}`$ with the two-view AND of
+Eq. 4.2, and the real costs depend on the energy spectrum, the coincidence window and the background rates, all of which carry uncertainty.
+
+### From analytic seeds to a stochastic optimisation
+
+The analytic maps are the **starting point, not the end product**. The next stage uses them to seed a stochastic optimisation (simulated annealing or
+basin hopping over the group and channel labels, and a relaxed, differentiable map trained by SGD) on simulated events, with a realistic,
+**rate-adjusted signal and noise model**: photon losses from backsplash and accidental hits at the measured tile rates, and the leak of charged
+background at the real fluxes. That stage either **verifies** the analytic maps (no move improves them) or **adjusts** them to the more realistic
+objective, and sweeping the leak cost against the false-veto cost traces photon efficiency against background rejection for each budget
+([ROADMAP](ROADMAP.md)).
+
+### Other variants
+
+Different problems, only mentioned here:
 
 - **Fan-out** (the thesis' layout: a tile may be wired to several groups, e.g. each face's veto ORs its own tiles and the adjacent rows of its neighbours).
-  Each group gets its own OR channel over any tile set (the union of its RoIs in the no-leak limit), so only the patterns are clustered: a clustering of the rows of $M$ (the special case
-  $N_C=T$ above), with the budget moved into the wiring (tile-to-group links). Covering $M$ exactly with the fewest all-ones blocks is a **set cover**: the minimum
-  biclique cover, or Boolean rank, of $M$.
+  Each group gets its own OR channel over any tile set (the union of its RoIs in the no-leak limit), so only the patterns are clustered: a clustering of
+  the rows of $`M`$ (the special case $`N_C=T`$ above), with the budget moved into the wiring (tile-to-group links). Covering $`M`$ exactly with the fewest
+  all-ones blocks is a **set cover**: the minimum biclique cover, or Boolean rank, of $`M`$, NP-complete (Orlin 1977).
 - **Hardware constraints** (a channel confined to one PSD face, a group to one FIT face): the same problem with cannot-link constraints between
   differently labelled rows or columns.
-- **The event-level objective**: the true figure of merit is $\varepsilon_{\rm L1}$ on photons, through the two-view AND of Eq. 4.2; the per-entry costs
-  $C^\pm$ above are its proxy for the search.
+- **The event-level objective**: $`\varepsilon_{\rm L1}`$ on photons, through the two-view AND of Eq. 4.2, of which the per-entry costs $`C^\pm`$ are the proxy.
 
 ## Notation and mathematics
 
-The thesis notation is kept: 3IR patterns $i$ (even view) and $j$ (odd view of the same double layer), RoIs $\{T\}_i$, the event RoI
-$\{T\}_{\rm event}=\big(\bigcup_i \{T\}^{\rm even}_i\big)\cap\big(\bigcup_j \{T\}^{\rm odd}_j\big)$ (Eq. 4.2), the L1 efficiency $\varepsilon_{\rm L1}$.
-New: $M_{it}=1$ if $t\in\{T\}_i$; budgets $N_G$, $N_C$ (not $K$, $L$: $L$ would clash with the trigger levels L0-L2); excess $\xi$ and leak $\kappa$ of a mask;
-per-tile backsplash $b_t$, activation rate $r_t$, coincidence window $\tau$.
+The thesis notation is kept: 3IR patterns $`i`$ (even view) and $`j`$ (odd view of the same double layer), RoIs $`\{T\}_i`$, the event RoI (Eq. 4.2)
 
-- **Channels preserve the event RoI.** $V_{it}$ depends on $t$ only through its channel, so an AND per channel realises the tile-level intersection exactly,
-  $\bigvee_t h_t V_{it}V_{jt}=\bigvee_l h_l S_{g(i)l}S_{g(j)l}$ ($h_l$: the OR of the channel's tiles), and the thesis' factorisation carries over channel by channel.
-- **0% loss.** $V=M$ needs identical RoIs within a group and identical RoI memberships within a channel: $N_G\ge N_G^*$ = distinct rows of $M$,
-  $N_C\ge N_C^*$ = distinct columns, both reached at once by grouping duplicates.
-- **Below the minimum.** Union routing (the no-leak limit) never drops an RoI tile; every tile it adds costs
-  photons twice: backsplash ($b_t$, steeply rising with energy) and accidental hits of the ~190 Hz per tile background inside the coincidence window,
-  $q_t = 1-e^{-r_t A\tau}$. Hence the false-veto cost in [the problem](#the-problem), $C^+_{it}=-\ln\big[(1-b_t)(1-q_t)\big]$ (minus the log of the photon survival probability).
-- **Figure of merit**: $\varepsilon_{\rm L1}$ **measured on Geant4 photons**, the fraction of L0-triggered fiducial photons that pass L1 with the map, accidentals included.
+```math
+\{T\}_{\rm event}=\Big(\bigcup_i \{T\}^{\rm even}_i\Big)\cap\Big(\bigcup_j \{T\}^{\rm odd}_j\Big),
+```
+
+and the L1 efficiency $`\varepsilon_{\rm L1}`$. New: $`M_{it}=1`$ if $`t\in\{T\}_i`$; budgets $`N_G`$, $`N_C`$ (not $`K`$, $`L`$: $`L`$ would clash with the
+trigger levels L0-L2); excess $`\xi`$ and leak $`\kappa`$ of a mask; per-tile backsplash $`b_t`$, activation rate $`r_t`$, coincidence window $`\tau`$.
+
+- **Channels preserve the event RoI.** $`V_{it}`$ depends on $`t`$ only through its channel, so an AND per channel realises the tile-level intersection
+  exactly, $`\bigvee_t h_t V_{it}V_{jt}=\bigvee_l h_l S_{g(i)l}S_{g(j)l}`$ ($`h_l`$: the OR of the channel's tiles), and the thesis' factorisation carries
+  over channel by channel.
+- **0% loss.** $`V=M`$ needs identical RoIs within a group and identical RoI memberships within a channel: $`N_G\ge N_G^*`$ = distinct rows of $`M`$,
+  $`N_C\ge N_C^*`$ = distinct columns, both reached at once by grouping duplicates.
+- **Below the minimum.** Union routing (the no-leak limit) never drops an RoI tile; every tile it adds costs photons twice: backsplash ($`b_t`$, steeply
+  rising with energy) and accidental hits of the ~190 Hz per tile background inside the coincidence window, $`q_t = 1-e^{-r_t A\tau}`$. Hence the
+  false-veto cost $`C^+_{it}=-\ln\big[(1-b_t)(1-q_t)\big]`$, minus the log of the photon survival probability.
+- **Figure of merit**: $`\varepsilon_{\rm L1}`$ **measured on Geant4 photons**, the fraction of L0-triggered fiducial photons that pass L1 with the map,
+  accidentals included.
 
 ## The data
 
@@ -100,7 +141,7 @@ per-tile backsplash $b_t$, activation rate $r_t$, coincidence window $\tau$.
 | RoI of every 3IR pattern (3820; planes 0-9, all codes) | Regenerated with HerdSoftware 0.3.2 and the RoI code behind the thesis ([`data/`](data), recipe in `data/regeneration/`) | The trigger configurations of the analysis cards come out of it exactly |
 | Trigger selection "thesis" (1780 patterns) | CALO intersect, third hit in the module adjacent to the first (codes 544, 546, 564, 566 removed), no upward-pointing patterns (upgoing: particle moving towards the top) | Upward-pointing patterns identified from their RoIs: low on the side faces, never reaching TOP |
 | PSD activation rates per tile | Recovered from thesis Fig. 4.9, the only copy left (`tools/extractPsdRates.py`) | Mean, spread and maximum match the summary computed from the events to 0.5%, 3%, 0.2% |
-| Backsplash per tile, $\varepsilon_{\rm L1}$ | The Geant4 photons that survive locally: 2 x 10^5, 10 MeV-100 GeV, upper hemisphere; 340 L0-triggered fiducial ones ([`stochastic/photonEvents.py`](stochastic/photonEvents.py)) | Weighted to $E^{-2}$, the full-PSD veto keeps 0.90 of them; thesis Table 4.2: 0.89 |
+| Backsplash per tile, $`\varepsilon_{\rm L1}`$ | The Geant4 photons that survive locally: 2 x 10^5, 10 MeV-100 GeV, upper hemisphere; 340 L0-triggered fiducial ones ([`stochastic/photonEvents.py`](stochastic/photonEvents.py)) | Weighted to $`E^{-2}`$, the full-PSD veto keeps 0.90 of them; thesis Table 4.2: 0.89 |
 
 All of it is the compact-v2 layout with the earlier PSD of 10 x 10 cm tiles; the later 5 x 30 cm design is not modelled. The February 2023 RoI dump
 (`data/patterns.txt`) could not be reproduced and is kept for reference only; see [`data/README.md`](data/README.md).
@@ -109,17 +150,50 @@ All of it is the compact-v2 layout with the earlier PSD of 10 x 10 cm tiles; the
   <img src="docs/figures/psdRates.png" alt="PSD activation rates per tile recovered from thesis Fig. 4.9, on the unfolded PSD, both layers" width="800">
 </p>
 
-The figures made from the Geant4 photons (backsplash map, efficiency against channels and energy) stay in the notebook until a larger simulation is
-possible; the numbers below come from the same small sample.
+Most figures made from the Geant4 photons (backsplash map, efficiency against channels and energy) stay in the notebook until a larger simulation is
+possible; the efficiencies quoted below come from the same small sample.
 
 ## Results
 
-**0% loss.** For the thesis selection, $N_G^*=1126$ pattern groups and $N_C^*=1326$ channels (of 1328 tiles): almost every tile sits in its own set of RoIs,
-so any realistic channel count is lossy. For all 3820 patterns $N_C^*$ is all 1328 tiles.
+**0% loss.** For the thesis selection, $`N_G^*=1126`$ pattern groups and $`N_C^*=1326`$ channels (of 1328 tiles): almost every tile sits in its own set of
+RoIs, so any realistic channel count is lossy. For all 3820 patterns $`N_C^*`$ is all 1328 tiles.
 
-**The thesis' strategies on Geant4 photons** ($\varepsilon_{\rm L1}$ of L0-triggered fiducial photons; $\xi_{\rm ev}$, $\kappa_{\rm ev}$: added and missing tiles of the event RoIs):
+### The main product: a map constrained to the hardware
 
-| Strategy | $N_G$ = OR channels (fan-out) | tile channels (partition) | $\xi_{\rm ev}$ | $\kappa_{\rm ev}$ | $\varepsilon_{\rm L1}$, $E^{-2}$, no accidentals | $\varepsilon_{\rm L1}$, $E^{-2}$, $\tau$ = 100 ns | $\varepsilon_{\rm L1}$, $E^{-2}$, $\tau$ = 1 µs | $\varepsilon_{\rm L1}$, log-uniform, 100 ns |
+Five pattern groups, one per FIT face, and **8 PSD channels, each inside one PSD face** (one board per face), found by
+`tools/findChannelMap.py --groups 5 --channels 8 --groups-per-fit-face --channels-per-psd-face`:
+
+<p align="center">
+  <img src="docs/figures/constrainedChannels.png" alt="The constrained map on the unfolded PSD, both layers: eight channels, each within one PSD face, coloured, with the FIT faces each channel vetoes" width="950">
+</p>
+
+TOP and Yneg stay whole; Xpos, Xneg and Ypos are each split into a border (the rows next to TOP and the side neighbours) and a core. With 8 channels for
+5 faces only three faces can be split, so the map is not symmetric. The routing, which channels veto the patterns of each FIT face:
+
+| Patterns of FIT face | TOP (392 tiles) | Xpos border (107) | Xpos core (127) | Yneg (234) | Ypos border (99) | Ypos core (135) | Xneg border (107) | Xneg core (127) |
+|---|---|---|---|---|---|---|---|---|
+| TOP | ✓ | ✓ | | ✓ | ✓ | | ✓ | |
+| Xpos | ✓ | ✓ | ✓ | ✓ | ✓ | | | |
+| Xneg | ✓ | | | ✓ | ✓ | | ✓ | ✓ |
+| Ypos | ✓ | ✓ | | | ✓ | ✓ | ✓ | |
+| Yneg | ✓ | ✓ | | ✓ | | | ✓ | |
+
+The four constrained solutions computed so far ($`\varepsilon_{\rm L1}`$ on the Geant4 photons, $`\tau`$ = 100 ns; cost relative to the RoI-weighted total):
+
+| $`(N_G, N_C)`$ | Constraint | Cost | $`\xi_{\rm ev}`$ | $`\varepsilon_{\rm L1}`$, $`E^{-2}`$ | $`\varepsilon_{\rm L1}`$, log-uniform |
+|---|---|---|---|---|---|
+| (5, 17) | groups per FIT face | 1.26 | 4.30 | 0.949 | 0.663 |
+| (5, 17) | groups per FIT face, channels per PSD face | 1.75 | 6.06 | 0.945 | 0.638 |
+| (5, 8) | groups per FIT face | 2.02 | 6.62 | 0.943 | 0.626 |
+| **(5, 8)** | **groups per FIT face, channels per PSD face** (above) | 3.52 | 9.94 | 0.920 | 0.576 |
+
+The full tile lists per channel come out of `tools/findChannelMap.py` (text and `--json`).
+
+### The thesis' strategies
+
+On the Geant4 photons ($`\varepsilon_{\rm L1}`$ of L0-triggered fiducial photons; $`\xi_{\rm ev}`$, $`\kappa_{\rm ev}`$: added and missing tiles of the event RoIs):
+
+| Strategy | $`N_G`$ = OR channels (fan-out) | tile channels (partition) | $`\xi_{\rm ev}`$ | $`\kappa_{\rm ev}`$ | $`\varepsilon_{\rm L1}`$, $`E^{-2}`$, no accidentals | $`\varepsilon_{\rm L1}`$, $`E^{-2}`$, $`\tau`$ = 100 ns | $`\varepsilon_{\rm L1}`$, $`E^{-2}`$, $`\tau`$ = 1 µs | $`\varepsilon_{\rm L1}`$, log-uniform, 100 ns |
 |---|---|---|---|---|---|---|---|---|
 | exact RoI | 1126 | 1326 | 0 | 0 | 0.990 | 0.988 | 0.970 | 0.825 |
 | full PSD veto | 1 | 1 | 14.9 | 0 | 0.901 | 0.880 | 0.710 | 0.486 |
@@ -133,24 +207,22 @@ so any realistic channel count is lossy. For all 3820 patterns $N_C^*$ is all 13
 - Without the neighbouring rows the veto is cheap in photons but leaks 11.5% of the event-RoI tiles.
 - **The coincidence window matters as much as the layout**: at 1 µs the accidental hits equal the backsplash, and every veto loses 2-17 points.
 
+### Optimised maps against the budget
+
+$`\varepsilon_{\rm L1}`$ of the best map found for each budget ($`E^{-2}`$ photons, $`\tau`$ = 100 ns; greedy search and local refinement). With fan-out, a map
+with $`N_G`$ groups needs $`N_G`$ OR channels and the first column applies (each group vetoed by the union of its patterns' RoIs); the other columns are the
+partition model with $`N_C`$ tile channels:
+
+<p align="center">
+  <img src="docs/figures/efficiencyGrid.png" alt="Heat map of the L1 efficiency of the optimised maps, pattern groups N_G against PSD channels N_C, values in each cell" width="950">
+</p>
+
 <p align="center">
   <img src="docs/figures/excessVsChannels.png" alt="Event-RoI excess of the optimised channel maps against the number of PSD channels, one curve per number of pattern groups, with the thesis' strategies as points" width="640">
 </p>
 
 The extra tiles in the event RoIs against the budget are pure geometry (the maps themselves were optimised with the false-veto cost, which includes the
 measured backsplash).
-
-**Optimised maps against the budget** ($\varepsilon_{\rm L1}$, $E^{-2}$ photons, $\tau$ = 100 ns; optimised with the greedy search and local refinement).
-With fan-out, a map with $N_G$ groups needs $N_G$ OR channels and the first column applies (each group vetoed by the union of its patterns' RoIs);
-the other columns are the partition model with $N_C$ tile channels:
-
-| $N_G$ \ $N_C$ | 1326 | 256 | 64 | 32 | 17 | 8 | 4 | 1 |
-|---|---|---|---|---|---|---|---|---|
-| 1126 | 0.988 | 0.987 | 0.984 | 0.977 | 0.964 | 0.949 | 0.931 | 0.880 |
-| 256 | 0.987 | 0.986 | 0.984 | 0.973 | 0.966 | 0.949 | 0.938 | 0.880 |
-| 64 | 0.977 | 0.977 | 0.973 | 0.972 | 0.964 | 0.948 | 0.936 | 0.880 |
-| 16 | 0.966 | 0.969 | 0.969 | 0.963 | 0.958 | 0.943 | 0.936 | 0.880 |
-| 5 | 0.949 | 0.949 | 0.949 | 0.949 | 0.949 | 0.945 | 0.939 | 0.880 |
 
 - **At its own budget the thesis' layout is what the optimiser finds**: with 5 groups the best is the union of each face's RoIs (0.949), and the
   two-row hybrid is within 0.002 of it.
@@ -174,20 +246,23 @@ python tools/findChannelMap.py --strategy face-rows --rows 2 --events           
 ```
 
 The search (greedy merges in several orders with exact merge costs, a one-group-per-face seed, local refinement) returns good local optima, not certified
-ones. Hardware constraints enter as labels no merge may cross; `--cost` accepts any per-pattern, per-tile false-veto cost matrix.
+ones ([How hard it is](#how-hard-it-is)). Hardware constraints enter as labels no merge may cross; `--cost` accepts any per-pattern, per-tile false-veto
+cost matrix.
 
 ## Limitations
 
+- **Not provably optimal**: below 0% loss the maps are local optima of a heuristic search, with no bound on the gap.
 - **Small photon sample**: 340 L0-triggered fiducial photons from the upper hemisphere. Efficiencies are good to a few percent; the backsplash map is
-  smoothed and, weighted to $E^{-2}$, dominated by a few low-energy photons.
-- **Background leak only geometric**: there are no charged-particle events left to measure the leak of a map; $\kappa$ counts missing RoI tiles.
+  smoothed and, weighted to $`E^{-2}`$, dominated by a few low-energy photons.
+- **Background leak only geometric**: there are no charged-particle events left to measure the leak of a map; $`\kappa`$ counts missing RoI tiles.
 - **Coincidence window**: a placeholder (100 ns); accidentals scale with it.
 - **Trigger simplifications**: the calorimeter requirement is applied per pattern, not per pair, and L2 is not applied.
 
 ## Next
 
-Exact Boolean rank by set cover over maximal bicliques; a relaxed, differentiable channel map trained by SGD in JAX; soft thresholds and soft RoIs to couple
-the trigger to detector design in [AutoDetOpt](https://github.com/lfarinaa/AutoDetOpt) ([ROADMAP.md](ROADMAP.md)).
+The stochastic stage seeded by the analytic maps ([above](#from-analytic-seeds-to-a-stochastic-optimisation)), on a fresh simulation with charged
+background; exact Boolean rank by set cover over maximal bicliques; soft thresholds and soft RoIs to couple the trigger to detector design in
+[AutoDetOpt](https://github.com/lfarinaa/AutoDetOpt) ([ROADMAP.md](ROADMAP.md)).
 
 ---
 
@@ -199,5 +274,7 @@ the trigger to detector design in [AutoDetOpt](https://github.com/lfarinaa/AutoD
 
 - L. Fariña Alonso, *Gamma-ray astronomy with the HERD detector onboard the Chinese Space Station*, PhD thesis, Universitat Autònoma de Barcelona (2025).
 - L. Fariña et al., *Design and Performance of a Low-Energy Gamma-Ray Trigger System for HERD*, Instruments 8 (2024) 31, [doi:10.3390/instruments8020031](https://doi.org/10.3390/instruments8020031).
+- S. Wulff, R. Urner, S. Ben-David, *Monochromatic Bi-Clustering*, Proc. ICML 2013 (PMLR 28), [proceedings.mlr.press/v28/wulff13](https://proceedings.mlr.press/v28/wulff13.html).
+- J. Orlin, *Contentment in graph theory: covering graphs with cliques*, Indagationes Mathematicae 80 (1977) 406-424.
 
 <sub>Work in progress by Luis Fariña; no licence yet.</sub>
