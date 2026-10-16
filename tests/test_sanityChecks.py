@@ -168,6 +168,28 @@ def test_tile_probabilities_reduce_to_the_scalar_case():
     assert np.all(longer > ru.tileVetoProbability(keys, window=1e-7, backsplash=0.0))
 
 
+def test_generic_front_end_on_a_toy_detector():
+    """The detector-agnostic tool on a matrix with four planted blocks: N_G* = N_C* = 4, and a (4, 4) budget recovers the blocks at zero cost;
+    with a column label that splits a block, no channel mixes labels and no veto-region entry is dropped."""
+    import tempfile
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "tools"))
+    import solveChannelMap
+    matrix = np.zeros((12, 20), dtype=bool)
+    for k in range(4):
+        matrix[3 * k:3 * k + 3, 5 * k:5 * k + 5] = True
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory) / "toy.npy"
+        np.save(path, matrix)
+        best = solveChannelMap.main(["--matrix", str(path), "--groups", "4", "--channels", "4"])
+        assert (best.numberOfGroups, best.numberOfChannels) == (4, 4) and np.array_equal(best.vetoMask(), matrix)
+        labels = pathlib.Path(directory) / "labels.txt"
+        labels.write_text("\n".join(["a"] * 7 + ["b"] * 13))                # Block 1 (columns 5-9) now straddles two boards.
+        constrained = solveChannelMap.main(["--matrix", str(path), "--groups", "4", "--channels", "4", "--col-labels", str(labels)])
+        assert np.all(constrained.vetoMask() >= matrix)
+        for l in range(constrained.numberOfChannels):
+            assert len(set(np.array(["a"] * 7 + ["b"] * 13)[constrained.colGroup == l])) == 1
+
+
 if __name__ == "__main__":
     failures = 0
     for name, check in [(name, value) for name, value in globals().items() if name.startswith("test_")]:
