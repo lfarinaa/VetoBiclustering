@@ -57,6 +57,7 @@ def tileVetoProbability(tileKeys, window=defaultWindow, backsplash="spectrumE2",
 
 
 def costMatrix(numberOfPatterns, vetoProbability):
-    """C_it = -ln(1 - pi_t), the same for every pattern (no pattern rates yet): the expected log-loss of photons when tile t joins a mask, so that the
-    cost of a mask is -ln of its survival probability."""
+    """C_it = -ln(1 - pi_t), the same for every pattern: the expected log-loss of photons when tile t joins a mask, so that the cost of a mask is -ln
+    of its survival probability. An approximation of C_it = -w_i ln[(1 - b_it)(1 - q_t)]: the backsplash really depends on the trigger pattern (b_it,
+    a pattern x tile map) and patterns fire at different photon rates w_i; here b_it is averaged over all triggers and w_i = 1 (too few photons)."""
     return np.tile(-np.log1p(-np.asarray(vetoProbability)), (numberOfPatterns, 1))

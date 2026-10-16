@@ -132,16 +132,25 @@ The notation follows the thesis, where the showcase comes from: 3IR patterns $`i
 \{T\}_{\rm event}=\Big(\bigcup_i \{T\}^{\rm even}_i\Big)\cap\Big(\bigcup_j \{T\}^{\rm odd}_j\Big),
 ```
 
-and the L1 efficiency $`\varepsilon_{\rm L1}`$. New: $`M_{it}=1`$ if $`t\in\{T\}_i`$; budgets $`N_G`$, $`N_C`$; excess $`\xi`$ and leak $`\kappa`$ of a mask; per-tile backsplash $`b_t`$, activation rate $`r_t`$, coincidence window $`\tau`$.
+and the L1 efficiency $`\varepsilon_{\rm L1}`$. New: $`M_{it}=1`$ if $`t\in\{T\}_i`$; budgets $`N_G`$, $`N_C`$; excess $`\xi`$ and leak $`\kappa`$ of a mask; backsplash $`b_{it}`$, photon rate $`w_i`$ of pattern $`i`$, per-tile activation rate $`r_t`$, coincidence window $`\tau`$.
 
 - **Channels preserve the event RoI.** $`V_{it}`$ depends on $`t`$ only through its channel, so an AND per channel realises the tile-level intersection
   exactly, $`\bigvee_t h_t V_{it}V_{jt}=\bigvee_l h_l S_{g(i)l}S_{g(j)l}`$ ($`h_l`$: the OR of the channel's tiles), and the thesis' factorisation carries
   over channel by channel.
 - **0% loss.** $`V=M`$ needs identical RoIs within a group and identical RoI memberships within a channel: $`N_G\ge N_G^*`$ = distinct rows of $`M`$,
   $`N_C\ge N_C^*`$ = distinct columns, both reached at once by grouping duplicates.
-- **Below the minimum.** Union routing (the no-leak limit) never drops an RoI tile; every tile it adds costs photons twice: backsplash ($`b_t`$, steeply
-  rising with energy) and accidental hits of the ~190 Hz per tile background inside the coincidence window, $`q_t = 1-e^{-r_t A\tau}`$. Hence the
-  false-veto cost $`C^+_{it}=-\ln\big[(1-b_t)(1-q_t)\big]`$, minus the log of the photon survival probability.
+- **Below the minimum.** Union routing (the no-leak limit) never drops an RoI tile; every tile it adds costs photons twice. **Backsplash** depends on the
+  trigger: a photon that fires pattern $`i`$ showers in a particular place and splashes onto particular tiles, so it is a pattern x tile map
+  $`b_{it}`$, one distribution over tiles per trigger pattern, steeply rising with energy. **Accidental hits** of the ~190 Hz per tile background inside
+  the coincidence window do not depend on the trigger, $`q_t = 1-e^{-r_t A\tau}`$. Weighting each pattern by its photon rate $`w_i`$, the false-veto cost is
+
+  ```math
+  C^+_{it} = -\,w_i\,\ln\big[(1-b_{it})(1-q_t)\big],
+  ```
+
+  the expected log-loss of photons when tile $`t`$ joins the veto of pattern $`i`$.
+  **So far the cost uses $`w_i = 1`$ and $`b_{it}\approx b_t`$**, the backsplash averaged over all triggering photons: 340 photons cannot fill a
+  1780 x 1328 map. The efficiencies quoted below do not share this approximation, since they replay the photons event by event.
 - **Figure of merit**: $`\varepsilon_{\rm L1}`$ **measured on Geant4 photons**, the fraction of L0-triggered fiducial photons that pass L1 with the map,
   accidentals included.
 
@@ -275,6 +284,8 @@ The search (greedy merges in several orders with exact merge costs, optional see
 - **Outdated showcase model**: the HERD numbers are for the thesis and paper design; the instrument has changed a lot since.
 - **Small photon sample**: 340 L0-triggered fiducial photons from the upper hemisphere. Efficiencies are good to a few percent; the backsplash map is
   smoothed and, weighted to $`E^{-2}`$, dominated by a few low-energy photons.
+- **Backsplash averaged over triggers**: the search cost uses one backsplash per tile and equal pattern weights instead of the pattern x tile
+  map $`b_{it}`$ and the pattern rates $`w_i`$ ([above](#notation-and-mathematics)); both need a much larger photon sample.
 - **Background leak only geometric**: there are no charged-particle events left to measure the leak of a map; $`\kappa`$ counts missing RoI tiles.
 - **Coincidence window**: a placeholder (100 ns); accidentals scale with it.
 - **Trigger simplifications**: the calorimeter requirement is applied per pattern, not per pair, and L2 is not applied.

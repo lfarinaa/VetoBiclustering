@@ -9,7 +9,7 @@
 
 ## Stochastic (event-weighted, iterative)
 
-5. **Costs from events, and leaks allowed**: the false-veto cost C+_it from Geant4 photons (first-trigger patterns x PSD hits outside the RoI, above threshold) and the leak cost C-_it from protons and electrons; the AeffCalc samples first, a fresh production after. Then drop the no-leak limit: block routing by the weighted majority S_kl = [sum C- M >= sum C+ (1 - M)] in the merge costs and refinement, and sweep C-/C+ for the efficiency-rejection trade-off.
+5. **Costs from events, and leaks allowed**: the false-veto cost C+_it = -w_i ln[(1 - b_it)(1 - q_t)] from Geant4 photons, with the backsplash as a pattern x tile map b_it (first-trigger patterns x PSD hits outside the RoI, above threshold; smoothed or parametrised by the distance from the pattern's track, since 1780 x 1328 entries need many photons) and the photon rate w_i of each pattern and the leak cost C-_it from protons and electrons; the AeffCalc samples first, a fresh production after. Then drop the no-leak limit: block routing by the weighted majority S_kl = [sum C- M >= sum C+ (1 - M)] in the merge costs and refinement, and sweep C-/C+ for the efficiency-rejection trade-off.
 6. **Optimisers on the assignments**: simulated annealing / basin hopping over the group and channel labels, started from the greedy map, on training events, evaluated on test events.
 7. **Relaxed optimisation**: soft assignments (softmax groups, sigmoid routing) and a smooth veto probability, trained by SGD in JAX; then rounding and the exact evaluation.
 8. **Closing the loop**: generate, optimise, re-weight with the new map, iterate; the trade-off curve of photon efficiency against background acceptance for each channel budget.
