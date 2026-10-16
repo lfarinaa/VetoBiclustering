@@ -1,36 +1,48 @@
 # VetoBiclustering
 
-### How few channels does the ULEG L1 veto need? Merging 3IR patterns and PSD tiles without losing what the region-of-interest veto is for
+### How few channels does a region-of-interest veto need? Merging trigger patterns and veto elements under a channel budget
 
 > [!NOTE]
 > **Work in progress.** The analytic stage is in place: the problem, its exact 0%-loss solution, and a search that finds good (not provably optimal)
 > maps for any channel budget. The stochastic stage, which takes these maps as seeds, needs a fresh simulation and is still to come ([Next](#next)).
+> The code is detector-agnostic; the HERD model it is showcased on is the design of the [thesis and paper](#references), which HERD has since moved
+> away from, so its numbers illustrate the method rather than predict the current instrument.
+
+A space-borne gamma-ray telescope rejects charged particles with an **anticoincidence veto**, a segmented detector around the tracker. Vetoing on the
+whole detector throws away photons whose shower splashes back onto it; a **region-of-interest (RoI) veto** lets each trigger pattern be vetoed only by
+the veto elements that a charged particle producing it must have crossed. Implemented literally, that is one veto line per trigger pattern listening to
+its own set of elements: thousands of patterns and elements, far beyond the channels of a trigger board. Both signals then have to be merged:
+
+```
+ trigger patterns i ──► N_G pattern groups g(i) ──┐
+                                                   ├── routing S (N_G x N_C) ──► veto mask V_it = S_{g(i) c(t)}   vs   the RoI M_it
+ veto elements t    ──► N_C channels c(t)       ──┘
+```
+
+patterns into $`N_G`$ **groups** (one veto decision each), veto elements (tiles, strips, ...) into $`N_C`$ **channels** (an OR of elements), and a routing $`S`$
+says which channels veto which group. Pattern $`i`$ is then vetoed by the mask $`V_{it}=S_{g(i)c(t)}`$ instead of its RoI $`M_{it}`$. Elements in the mask but
+not in the RoI cost signal (backsplash and accidental hits there now veto); elements in the RoI but not in the mask let charged particles through.
+
+**VetoBiclustering** states this as a matrix problem, solves its 0%-loss case exactly and searches good maps for any budget and hardware constraint. The
+core needs only the pattern x element incidence matrix (and optionally costs and labels), whatever the detector
+([`tools/solveChannelMap.py`](tools/solveChannelMap.py)).
+
+### The showcase: the HERD ULEG trigger
 
 <p align="center">
   <img src="docs/figures/eventRoi3d.png" alt="The PSD of HERD as the five faces of a cube; the RoIs of an even-view and an odd-view top-FIT pattern and their intersection, the event RoI" width="900">
 </p>
 
-The ultra-low-energy gamma-ray trigger of HERD (ULEG; [thesis](#references), chapter 4) fires on **3IR patterns**, three hit FIT mats in consecutive same-view
-planes, and at L1 vetoes the event when a PSD tile fires inside the pattern's **region of interest (RoI)** $`\{T\}_i`$: the tiles a charged particle producing
-that pattern must have crossed. Vetoing on the RoI rather than the whole PSD saves the photons whose calorimeter shower splashes back onto tiles far from
-the track. Implemented literally, it is one veto line per pattern listening to its own tiles: **1780 patterns and 1328 tiles** for the thesis' 3IR
-definition, far beyond the channels of a trigger board. The thesis proposed instead to *"predefine groups of PSD tiles and associate them with subsets of
-3IR patterns"*, for instance one veto decision per detector face extended by up to two rows of the neighbouring faces (section 4.2.2). This project
-quantifies that choice and finds good maps for any channel budget.
-
-```
- 3IR patterns i ──► N_G pattern groups g(i) ──┐
-                                               ├── routing S (N_G x N_C) ──► veto mask V_it = S_{g(i) c(t)}   vs   the RoI M_it
- PSD tiles t    ──► N_C channels c(t)       ──┘
-```
-
-Both signals are merged: patterns into $`N_G`$ **groups** (one veto decision each), tiles into $`N_C`$ **channels** (an OR of tiles), and a routing $`S`$ says which
-channels veto which group. Pattern $`i`$ is then vetoed by the mask $`V_{it}=S_{g(i)c(t)}`$ instead of its RoI $`M_{it}`$. Tiles in the mask but not in the RoI
-cost photons (backsplash and accidental hits there now veto); tiles in the RoI but not in the mask let charged particles through.
+The ultra-low-energy gamma-ray trigger of HERD (ULEG; [thesis](#references), chapter 4), in the design of the thesis and paper (compact-v2, PSD of 10 x 10 cm
+tiles), fires on **3IR patterns**, three hit FIT mats in consecutive same-view planes, and at L1 vetoes the event when a PSD tile fires inside the
+pattern's RoI $`\{T\}_i`$: **1780 patterns and 1328 tiles** for the thesis' 3IR definition. The thesis proposed to *"predefine groups of PSD tiles and
+associate them with subsets of 3IR patterns"*, for instance one veto decision per detector face extended by up to two rows of the neighbouring faces
+(section 4.2.2). The showcase quantifies that choice and finds good maps for any channel budget. The HERD design has changed a lot since (for one, the PSD moved
+to 5 x 30 cm tiles), so the showcase is a realistic test bed for the method, not a statement about the current instrument.
 
 ## The problem
 
-**Given** the RoI matrix $`M\in\{0,1\}^{P\times T}`$ ($`P`$ patterns, $`T`$ tiles, $`M_{it}=1`$ iff $`t\in\{T\}_i`$), budgets $`N_G`$, $`N_C`$, and two costs per entry,
+**Given** the RoI matrix $`M\in\{0,1\}^{P\times T}`$ ($`P`$ trigger patterns, $`T`$ veto elements, called tiles below; $`M_{it}=1`$ iff $`t\in\{T\}_i`$), budgets $`N_G`$, $`N_C`$, and two costs per entry,
 one for each way a mask can be wrong:
 
 - $`C^+_{it}\ge 0`$, a **false veto**: tile $`t`$ vetoes pattern $`i`$ although it is not in its RoI, and photons are lost (backsplash, accidental hits): **signal loss**;
@@ -63,7 +75,7 @@ so $`V\ge M`$ and only the false-veto cost remains. Leak costs need charged-part
 
 | Aspect | This problem |
 |---|---|
-| Matrix | the binary pattern x tile incidence matrix $`M`$ ($`P\times T`$ = 1780 x 1328 for the thesis selection), with two non-negative weight matrices $`C^\pm`$ of the same shape |
+| Matrix | the binary pattern x tile incidence matrix $`M`$ (1780 x 1328 in the HERD showcase), with two non-negative weight matrices $`C^\pm`$ of the same shape |
 | Variables | two hard partitions, of the rows (patterns into $`N_G`$ groups) and of the columns (tiles into $`N_C`$ channels), and the block values $`S`$ |
 | Model | Boolean matrix tri-factorisation $`V = G\,S\,H^\top`$ (Boolean product), $`G\in\{0,1\}^{P\times N_G}`$ and $`H\in\{0,1\}^{T\times N_C}`$ cluster-indicator matrices (one 1 per row), $`S\in\{0,1\}^{N_G\times N_C}`$: a block-constant binary approximation of $`M`$ |
 | Constraints | cardinality: at most $`N_G`$ row and $`N_C`$ column clusters; optionally cannot-link labels (below); in the no-leak limit, covering $`V\ge M`$ |
@@ -82,7 +94,7 @@ of a point its weighted distance to that centre.
   proven NP-hard; the weighted problem contains it. They also give an approximation scheme for that equal-cost case; whether it carries over to these
   weights is not checked here.
 - **The no-leak limit**, the version solved so far, has no proof of hardness here, and no polynomial algorithm is known to us; it is treated as hard.
-- **Exhaustive search is out of the question.** At $`(N_G, N_C) = (5, 8)`$ there are about $`10^{1242}`$ ways to group the 1780 patterns and $`10^{1195}`$
+- **Exhaustive search is out of the question.** In the HERD showcase at $`(N_G, N_C) = (5, 8)`$ there are about $`10^{1242}`$ ways to group the 1780 patterns and $`10^{1195}`$
   ways to split the 1328 tiles. With one group per FIT face and every channel inside one PSD face, the tile splits alone still exceed $`10^{200}`$.
 - **No optimality certificate.** The search (greedy merges, a one-group-per-face seed, local refinement) has no lower bound below the 0%-loss point, so
   the gap to the optimum is unknown. Two checks so far: different merge orders and seeds land on the same cost for every constrained budget below,
@@ -114,7 +126,7 @@ Different problems, only mentioned here:
 
 ## Notation and mathematics
 
-The thesis notation is kept: 3IR patterns $`i`$ (even view) and $`j`$ (odd view of the same double layer), RoIs $`\{T\}_i`$, the event RoI (Eq. 4.2)
+The notation follows the thesis, where the showcase comes from: 3IR patterns $`i`$ (even view) and $`j`$ (odd view of the same double layer), RoIs $`\{T\}_i`$, the event RoI (Eq. 4.2)
 
 ```math
 \{T\}_{\rm event}=\Big(\bigcup_i \{T\}^{\rm even}_i\Big)\cap\Big(\bigcup_j \{T\}^{\rm odd}_j\Big),
@@ -134,7 +146,7 @@ trigger levels L0-L2); excess $`\xi`$ and leak $`\kappa`$ of a mask; per-tile ba
 - **Figure of merit**: $`\varepsilon_{\rm L1}`$ **measured on Geant4 photons**, the fraction of L0-triggered fiducial photons that pass L1 with the map,
   accidentals included.
 
-## The data
+## The showcase data: HERD as in the thesis and paper
 
 | Input | Source | Check |
 |---|---|---|
@@ -143,7 +155,7 @@ trigger levels L0-L2); excess $`\xi`$ and leak $`\kappa`$ of a mask; per-tile ba
 | PSD activation rates per tile | Recovered from thesis Fig. 4.9, the only copy left (`tools/extractPsdRates.py`) | Mean, spread and maximum match the summary computed from the events to 0.5%, 3%, 0.2% |
 | Backsplash per tile, $`\varepsilon_{\rm L1}`$ | The Geant4 photons that survive locally: 2 x 10^5, 10 MeV-100 GeV, upper hemisphere; 340 L0-triggered fiducial ones ([`stochastic/photonEvents.py`](stochastic/photonEvents.py)) | Weighted to $`E^{-2}`$, the full-PSD veto keeps 0.90 of them; thesis Table 4.2: 0.89 |
 
-All of it is the compact-v2 layout with the earlier PSD of 10 x 10 cm tiles; the later 5 x 30 cm design is not modelled. The February 2023 RoI dump
+All of it is the compact-v2 layout with the earlier PSD of 10 x 10 cm tiles; the HERD design has since changed substantially (for one, 5 x 30 cm PSD tiles), and the later designs are not modelled. The February 2023 RoI dump
 (`data/patterns.txt`) could not be reproduced and is kept for reference only; see [`data/README.md`](data/README.md).
 
 <p align="center">
@@ -153,7 +165,7 @@ All of it is the compact-v2 layout with the earlier PSD of 10 x 10 cm tiles; the
 Most figures made from the Geant4 photons (backsplash map, efficiency against channels and energy) stay in the notebook until a larger simulation is
 possible; the efficiencies quoted below come from the same small sample.
 
-## Results
+## Results on the HERD showcase
 
 **0% loss.** For the thesis selection, $`N_G^*=1126`$ pattern groups and $`N_C^*=1326`$ channels (of 1328 tiles): almost every tile sits in its own set of
 RoIs, so any realistic channel count is lossy. For all 3820 patterns $`N_C^*`$ is all 1328 tiles.
@@ -235,8 +247,17 @@ measured backsplash).
 
 ## The program
 
-[`tools/findChannelMap.py`](tools/findChannelMap.py) finds (or evaluates) a map for any budget, trigger selection, coincidence window and hardware constraint,
-and lists the combination (patterns per group, tiles per channel, routing) as text and JSON:
+**Any detector**: [`tools/solveChannelMap.py`](tools/solveChannelMap.py) takes the incidence matrix (`.npy` or a 0/1 text file), optionally a cost matrix,
+row and column labels a group or channel may not mix (one board per face, say) and names, and lists the map (patterns per group, elements per channel,
+routing) as text and JSON:
+
+```
+python tools/solveChannelMap.py --matrix roi.npy --groups 8 --channels 16
+python tools/solveChannelMap.py --matrix roi.csv --cost cost.npy --col-labels boards.txt --groups 5 --channels 8 --json map.json
+```
+
+**The HERD showcase**: [`tools/findChannelMap.py`](tools/findChannelMap.py) is the same search with the HERD front end: the RoI dump, trigger selections,
+PSD geometry, rates, the coincidence window, and the L1 efficiency on the Geant4 photons:
 
 ```
 python tools/findChannelMap.py --groups 16 --channels 64 --events                          # optimise, measure on the Geant4 photons
@@ -245,13 +266,14 @@ python tools/findChannelMap.py --groups 5 --channels 17 --groups-per-fit-face \
 python tools/findChannelMap.py --strategy face-rows --rows 2 --events                      # evaluate the thesis' hybrid
 ```
 
-The search (greedy merges in several orders with exact merge costs, a one-group-per-face seed, local refinement) returns good local optima, not certified
-ones ([How hard it is](#how-hard-it-is)). Hardware constraints enter as labels no merge may cross; `--cost` accepts any per-pattern, per-tile false-veto
-cost matrix.
+The search (greedy merges in several orders with exact merge costs, optional seeds, local refinement) returns good local optima, not certified ones
+([How hard it is](#how-hard-it-is)). The detector-specific parts live in their own modules (`patternDump`, `geometryUtils`, `rateUtils`,
+`stochastic/photonEvents`); the core (`losslessUtils`, `mergeUtils`) sees only matrices.
 
 ## Limitations
 
 - **Not provably optimal**: below 0% loss the maps are local optima of a heuristic search, with no bound on the gap.
+- **Outdated showcase model**: the HERD numbers are for the thesis and paper design; the instrument has changed a lot since.
 - **Small photon sample**: 340 L0-triggered fiducial photons from the upper hemisphere. Efficiencies are good to a few percent; the backsplash map is
   smoothed and, weighted to $`E^{-2}`$, dominated by a few low-energy photons.
 - **Background leak only geometric**: there are no charged-particle events left to measure the leak of a map; $`\kappa`$ counts missing RoI tiles.

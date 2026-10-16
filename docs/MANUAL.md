@@ -1,6 +1,6 @@
 # User manual
 
-How to run VetoBiclustering and where everything is. For the problem and the headline numbers see the [README](../README.md); for results, [FINDINGS.md](../FINDINGS.md).
+How to run VetoBiclustering and where everything is. The core (`losslessUtils`, `mergeUtils`, `tools/solveChannelMap.py`) is detector-agnostic; the rest is the HERD showcase, in the design of the thesis and paper. For the problem and the headline numbers see the [README](../README.md); for results, [FINDINGS.md](../FINDINGS.md).
 
 ## 1. Install
 
@@ -19,7 +19,8 @@ nbstripout --install                   # once, so that notebook outputs are not 
 | [`data/`](../data) | The RoI maps (regenerated: `patterns_allPlanes.txt`; February 2023: `patterns.txt`), the PSD tile rates, the measured backsplash, the regeneration recipe; provenance in its README |
 | [`legacy/aeffcalc/`](../legacy/aeffcalc) | The C++ algorithms of the AeffCalc HERD analysis that define patterns and RoIs, with the datacards that configured them; reference only, not built here |
 | [`tests/`](../tests) | Sanity checks (`python tests/test_sanityChecks.py`) |
-| [`tools/findChannelMap.py`](../tools/findChannelMap.py) | The generic program: find (or evaluate) a channel map for a budget, trigger selection, coincidence window and constraints, and list it (text, JSON); `--events` adds the measured L1 efficiency |
+| [`tools/solveChannelMap.py`](../tools/solveChannelMap.py) | The detector-agnostic program: any incidence matrix (`.npy` or 0/1 text), optional cost, row/column labels and names; lists the map as text and JSON |
+| [`tools/findChannelMap.py`](../tools/findChannelMap.py) | The HERD showcase front end: find (or evaluate) a channel map for a budget, trigger selection, coincidence window and constraints, and list it (text, JSON); `--events` adds the measured L1 efficiency |
 | [`tools/extractPsdRates.py`](../tools/extractPsdRates.py), [`tools/measureBacksplash.py`](../tools/measureBacksplash.py) | Rebuild `data/psdTileRates.csv` from thesis Fig. 4.9 and `data/psdTileBacksplash.csv` from the Geant4 photons |
 | [`tools/checkCommitTrailers.py`](../tools/checkCommitTrailers.py) | The commit-message check for AI credit (see CONTRIBUTING.md) |
 
