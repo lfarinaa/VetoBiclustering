@@ -132,8 +132,7 @@ The notation follows the thesis, where the showcase comes from: 3IR patterns $`i
 \{T\}_{\rm event}=\Big(\bigcup_i \{T\}^{\rm even}_i\Big)\cap\Big(\bigcup_j \{T\}^{\rm odd}_j\Big),
 ```
 
-and the L1 efficiency $`\varepsilon_{\rm L1}`$. New: $`M_{it}=1`$ if $`t\in\{T\}_i`$; budgets $`N_G`$, $`N_C`$ (not $`K`$, $`L`$: $`L`$ would clash with the
-trigger levels L0-L2); excess $`\xi`$ and leak $`\kappa`$ of a mask; per-tile backsplash $`b_t`$, activation rate $`r_t`$, coincidence window $`\tau`$.
+and the L1 efficiency $`\varepsilon_{\rm L1}`$. New: $`M_{it}=1`$ if $`t\in\{T\}_i`$; budgets $`N_G`$, $`N_C`$; excess $`\xi`$ and leak $`\kappa`$ of a mask; per-tile backsplash $`b_t`$, activation rate $`r_t`$, coincidence window $`\tau`$.
 
 - **Channels preserve the event RoI.** $`V_{it}`$ depends on $`t`$ only through its channel, so an AND per channel realises the tile-level intersection
   exactly, $`\bigvee_t h_t V_{it}V_{jt}=\bigvee_l h_l S_{g(i)l}S_{g(j)l}`$ ($`h_l`$: the OR of the channel's tiles), and the thesis' factorisation carries
