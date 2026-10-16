@@ -4,7 +4,8 @@
 
 > [!NOTE]
 > **Work in progress.** The analytic stage is in place: the problem, its exact 0%-loss solution, and a search that finds good (not provably optimal)
-> maps for any channel budget. The stochastic stage, which takes these maps as seeds, needs a fresh simulation and is still to come ([Next](#next)).
+> maps for any channel budget. The stochastic stage, which takes these maps as seeds, needs a fresh, large simulation: **the work will be finished
+> once supercomputer access is available** ([Next](#next)).
 > The code is detector-agnostic; the HERD model it is showcased on is the design of the [thesis and paper](#references), which HERD has since moved
 > away from, so its numbers illustrate the method rather than predict the current instrument.
 
@@ -150,7 +151,8 @@ and the L1 efficiency $`\varepsilon_{\rm L1}`$. New: $`M_{it}=1`$ if $`t\in\{T\}
 
   the expected log-loss of photons when tile $`t`$ joins the veto of pattern $`i`$.
   **So far the cost uses $`w_i = 1`$ and $`b_{it}\approx b_t`$**, the backsplash averaged over all triggering photons: 340 photons cannot fill a
-  1780 x 1328 map. The efficiencies quoted below do not share this approximation, since they replay the photons event by event.
+  1780 x 1328 map. The efficiencies quoted below do not share this approximation, since they replay the photons event by event. The stochastic stage
+  handles the pattern dependence automatically, since it optimises on events.
 - **Figure of merit**: $`\varepsilon_{\rm L1}`$ **measured on Geant4 photons**, the fraction of L0-triggered fiducial photons that pass L1 with the map,
   accidentals included.
 
