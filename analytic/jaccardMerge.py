@@ -170,8 +170,8 @@ class _JaccardState:
             costBefore = self.exactCost
             (self.applyGroupMerge if side == "group" else self.applyChannelMerge)(keep, drop)
             if trace is not None:
-                trace.append(dict(side=side, distance=float(distance), groups=int(self.aliveGroups.sum()), channels=int(self.aliveChannels.sum()),
-                                  exactCost=self.exactCost, addedCost=self.exactCost - costBefore))
+                trace.append(dict(side=side, keep=int(keep), drop=int(drop), distance=float(distance), groups=int(self.aliveGroups.sum()),
+                                  channels=int(self.aliveChannels.sum()), exactCost=self.exactCost, addedCost=self.exactCost - costBefore))
 
     def copy(self):
         twin = object.__new__(_JaccardState)
@@ -188,7 +188,8 @@ class _JaccardState:
 
 def mergeByJaccard(matrix, numberOfGroups, numberOfChannels, cost=None, variant="jaccard", order="channelsFirst", rowLabels=None, colLabels=None):
     """A union-routed map with at most N_G groups and N_C channels, merging the most similar pair at every step. Returns (map, trace), the trace
-    holding one record per merge: the side merged, the Jaccard distance of the pair, the live counts and the exact cost after the merge."""
+    holding one record per merge: the side merged, the pair (keep, drop, as indices of the lossless groups or channels), the Jaccard distance of the
+    pair, the live counts and the exact cost after the merge."""
     cost = np.ones(matrix.shape) if cost is None else np.asarray(cost, dtype=float)
     state = _JaccardState(matrix, cost, variant, rowLabels, colLabels)
     trace = []
@@ -215,3 +216,21 @@ def scanJaccardBudgets(matrix, groupBudgets, channelBudgets, cost=None, variant=
             branch.mergeTo(*budget, order, branchTrace)
             maps[budget], traces[budget] = branch.channelMap(), list(branchTrace)
     return maps, traces
+
+
+def linkageFromTrace(trace, side, numberOfItems):
+    """The merges of one side of a trace as a SciPy linkage matrix, for scipy.cluster.hierarchy.dendrogram. Leaves are the lossless groups (or
+    channels), 0..numberOfItems-1; row r joins two clusters into cluster numberOfItems + r, at a height equal to the exact cost after that merge
+    (non-decreasing under union routing). Returns (linkage, members), members[cluster] being the leaves of every cluster. A path that stops above
+    one cluster gives fewer than numberOfItems - 1 rows (a forest): dendrogram needs the full tree, so merge to one item when the tree is wanted."""
+    clusterOf = list(range(numberOfItems))                                  # The cluster that currently holds each lossless item (as keep).
+    members = [[item] for item in range(numberOfItems)]
+    rows = []
+    for record in trace:
+        if record["side"] != side:
+            continue
+        first, second = clusterOf[record["keep"]], clusterOf[record["drop"]]
+        members.append(members[first] + members[second])
+        rows.append([first, second, record["exactCost"], len(members[-1])])
+        clusterOf[record["keep"]] = len(members) - 1
+    return np.array(rows, dtype=float), members

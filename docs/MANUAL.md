@@ -62,6 +62,7 @@ To use real costs, pass `cost=` (an array of the matrix's shape: expected false 
 |---|---|---|
 | [`vetoPatternShowcase.ipynb`](../examples/vetoPatternShowcase.ipynb) | A first look on the February 2023 dump: RoIs on the PSD, the ordered incidence matrix and RoI overlaps, RoIs per tile on the unfolded PSD, the lossless counts, a first look at budgets for the top FIT | about 1.5 min |
 | [`channelBudgetShowcase.ipynb`](../examples/channelBudgetShowcase.ipynb) | **The main one**: notation and mathematics, the regenerated data, rates and backsplash, 3D sketches of the event RoI, the thesis' strategies on Geant4 photons, L1 efficiency against the number of channels, solutions constrained to a per-face layout | about 30 min; a minute with `BICLUSTERING_USE_CACHE=1` |
+| [`jaccardMergeShowcase.ipynb`](../examples/jaccardMergeShowcase.ipynb) | The Jaccard route against the exact-cost greedy: which variant is best, cost and L1 efficiency per budget, exact cost along the merge paths and per-step checks, the merge paths as dendrograms, the (5, 8) maps as group-channel networks and on the PSD in 3D | about 1 min (needs `examples/results/jaccardComparison.pkl` from `tools/compareJaccardMerge.py`) |
 
 Run one with `jupyter nbconvert --to notebook --execute --inplace examples/<name>.ipynb`; the exit code is 0 when every cell ran.
 
