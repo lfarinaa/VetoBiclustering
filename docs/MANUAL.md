@@ -22,6 +22,7 @@ nbstripout --install                   # once, so that notebook outputs are not 
 | [`tools/solveChannelMap.py`](../tools/solveChannelMap.py) | The detector-agnostic program: any incidence matrix (`.npy` or 0/1 text), optional cost, row/column labels and names; lists the map as text and JSON |
 | [`tools/findChannelMap.py`](../tools/findChannelMap.py) | The HERD showcase front end: find (or evaluate) a channel map for a budget, trigger selection, coincidence window and constraints, and list it (text, JSON); `--events` adds the measured L1 efficiency |
 | [`tools/extractPsdRates.py`](../tools/extractPsdRates.py), [`tools/measureBacksplash.py`](../tools/measureBacksplash.py) | Rebuild `data/psdTileRates.csv` from thesis Fig. 4.9 and `data/psdTileBacksplash.csv` from the Geant4 photons |
+| [`tools/compareJaccardMerge.py`](../tools/compareJaccardMerge.py) | Jaccard route against the exact-cost greedy on the few-channel budgets: costs, L1 efficiency, trajectories and per-step checks (about 30 min; `--plot-only` redraws) |
 | [`tools/checkCommitTrailers.py`](../tools/checkCommitTrailers.py) | The commit-message check for AI credit (see CONTRIBUTING.md) |
 
 ### The modules of `analytic/`
@@ -32,6 +33,7 @@ nbstripout --install                   # once, so that notebook outputs are not 
 | `rateUtils.py` | Per-tile veto probability of a good photon: measured backsplash $b_t$ and accidentals $q_t = 1-e^{-r_t A\tau}$; the cost matrix $C_{it}=-\ln(1-\pi_t)$ |
 | `losslessUtils.py` | `ChannelMap` (groups $g$, channels $c$, routing $S$, the mask $V$), `findLosslessChannelMap` ($N_G^*$, $N_C^*$), `computeUnionRouting`, fooling-set and greedy-cover bounds on the Boolean rank |
 | `mergeUtils.py` | `findChannelMap` (the search: greedy in three orders + seeds + local refinement, optional labels a merge may not cross), `mergeGreedily`, `scanBudgets` (a grid of budgets), `refineLocally`, `computeMaskCost` ($\xi$, $\kappa$), `computePairMetrics` (event-level $\xi_{\rm ev}$, $\kappa_{\rm ev}$, relative $\varepsilon_{\rm L1}$), `channelMapFromMasks`, `describeChannelMap` |
+| `jaccardMerge.py` | The alternative route: agglomeration by weighted Jaccard similarity (`mergeByJaccard`, `scanJaccardBudgets`; variants `jaccard`, `costJaccard`, `wardJaccard`), with the exact cost carried along every merge; compared with the greedy in FINDINGS 10 |
 | `geometryUtils.py` | The schematic PSD layout (adjacency inferred from the dump), `faceExtendedMask` (the thesis' face + n rows veto), tile quads for 3D sketches |
 | `plotUtils.py` | Style; RoI per face; ordered incidence matrix and RoI overlap; the unfolded PSD of thesis Fig. 4.9; 3D cube sketches |
 
