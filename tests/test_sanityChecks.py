@@ -190,6 +190,35 @@ def test_generic_front_end_on_a_toy_detector():
             assert len(set(np.array(["a"] * 7 + ["b"] * 13)[constrained.colGroup == l])) == 1
 
 
+
+def test_jaccard_route_is_consistent():
+    """The Jaccard agglomeration (jaccardMerge): on four planted blocks every variant and order recovers them at zero cost; on the 2023 dump the
+    exact cost carried along the merges equals the cost recomputed from the final map, no RoI entry is dropped, the budget is reached, and a
+    column label is never crossed."""
+    import jaccardMerge as jm
+    planted = np.zeros((12, 20), dtype=bool)
+    for k in range(4):
+        planted[3 * k:3 * k + 3, 5 * k:5 * k + 5] = True
+    for variant in jm.variants:
+        for order in ("channelsFirst", "groupsFirst", "alternating"):
+            channelMap, _ = jm.mergeByJaccard(planted, 4, 4, variant=variant, order=order)
+            assert np.array_equal(channelMap.vetoMask(), planted), (variant, order)
+    top = incidence.forFitSides("TOP").withoutEmptyColumns()
+    cost = np.random.default_rng(0).uniform(0.5, 2.0, top.matrix.shape)
+    faces = np.array([key[0] for key in top.tileKeys])
+    for variant in jm.variants:
+        channelMap, trace = jm.mergeByJaccard(top.matrix, 6, 10, cost=cost, variant=variant, order="groupsFirst", colLabels=faces)
+        added, dropped = mu.computeMaskCost(top.matrix, channelMap, cost)
+        assert np.isclose(trace[-1]["exactCost"], added) and dropped == 0
+        assert channelMap.numberOfGroups <= 6 and channelMap.numberOfChannels <= 10
+        assert all(len(set(faces[channelMap.colGroup == l])) == 1 for l in range(channelMap.numberOfChannels))
+        assert all(later["exactCost"] >= earlier["exactCost"] - 1e-9 for earlier, later in zip(trace, trace[1:]))   # Union routing: merges only add.
+    maps, _ = jm.scanJaccardBudgets(top.matrix, [6, 3], [10, 5], cost=cost, variant="jaccard", order="channelsFirst")
+    single, _ = jm.mergeByJaccard(top.matrix, 3, 5, cost=cost, variant="jaccard", order="channelsFirst")
+    assert np.array_equal(maps[(3, 5)].vetoMask(), single.vetoMask())     # The scan and a single run follow the same path.
+
+
+
 if __name__ == "__main__":
     failures = 0
     for name, check in [(name, value) for name, value in globals().items() if name.startswith("test_")]:
