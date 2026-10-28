@@ -216,6 +216,10 @@ def test_jaccard_route_is_consistent():
     maps, _ = jm.scanJaccardBudgets(top.matrix, [6, 3], [10, 5], cost=cost, variant="jaccard", order="channelsFirst")
     single, _ = jm.mergeByJaccard(top.matrix, 3, 5, cost=cost, variant="jaccard", order="channelsFirst")
     assert np.array_equal(maps[(3, 5)].vetoMask(), single.vetoMask())     # The scan and a single run follow the same path.
+    trunkMaps, trunkTraces = jm.scanJaccardBudgets(top.matrix, [6, 3], [10, 5], cost=cost, variant="wardJaccard", order="groupsFirst", trunk=(12, 20))
+    trunkStart = [record for record in trunkTraces[(3, 5)] if record["groups"] >= 12 and record["channels"] >= 20]
+    assert trunkStart == [record for record in trunkTraces[(6, 10)] if record["groups"] >= 12 and record["channels"] >= 20]   # One shared trunk.
+    assert all(np.all(channelMap.vetoMask() >= top.matrix) for channelMap in trunkMaps.values())
 
 
 

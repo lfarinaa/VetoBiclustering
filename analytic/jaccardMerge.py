@@ -197,17 +197,26 @@ def mergeByJaccard(matrix, numberOfGroups, numberOfChannels, cost=None, variant=
     return state.channelMap(), trace
 
 
-def scanJaccardBudgets(matrix, groupBudgets, channelBudgets, cost=None, variant="jaccard", order="channelsFirst", rowLabels=None, colLabels=None):
+def scanJaccardBudgets(matrix, groupBudgets, channelBudgets, cost=None, variant="jaccard", order="channelsFirst", rowLabels=None, colLabels=None,
+                       trunk=None, trunkOrder="groupsFirst"):
     """Jaccard maps on a grid of budgets in one pass for the sequential orders: the outer side (channels for channelsFirst) is merged through its
     budgets once, and each stop is copied and merged through the inner budgets. Returns ({(N_G, N_C): map}, {(N_G, N_C): trace}), each trace
-    covering the whole path from the lossless map to that budget."""
+    covering the whole path from the lossless map to that budget.
+
+    trunk, optional (N_G, N_C) at or above every budget: both sides are first merged down to it once (in trunkOrder), and every budget branches
+    from there. A merge path is shared by every budget below where it stops, so the trunk is computed once; it also changes the path (some channels
+    merge before the groups reach their budget), which on the HERD showcase moved the cost by -16% to +11% per budget (FINDINGS 10)."""
     if order not in ("channelsFirst", "groupsFirst"):
         raise ValueError("scanJaccardBudgets takes the sequential orders; use mergeByJaccard for 'alternating'")
     cost = np.ones(matrix.shape) if cost is None else np.asarray(cost, dtype=float)
     state = _JaccardState(matrix, cost, variant, rowLabels, colLabels)
     maps, traces, outerTrace = {}, {}, []
+    if trunk is not None:
+        if trunk[0] < max(groupBudgets) or trunk[1] < max(channelBudgets):
+            raise ValueError(f"trunk {trunk} is below a budget")
+        state.mergeTo(*trunk, trunkOrder, outerTrace)
     channelsOuter = order == "channelsFirst"
-    everything = (state.aliveGroups.size, state.aliveChannels.size)
+    everything = (int(state.aliveGroups.sum()), int(state.aliveChannels.sum()))
     for outer in sorted(channelBudgets if channelsOuter else groupBudgets, reverse=True):
         state.mergeTo(everything[0] if channelsOuter else outer, outer if channelsOuter else everything[1], order, outerTrace)
         branch, branchTrace = state.copy(), list(outerTrace)
