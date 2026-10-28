@@ -99,7 +99,9 @@ of a point its weighted distance to that centre.
   ways to split the 1328 tiles. With one group per FIT face and every channel inside one PSD face, the tile splits alone still exceed $`10^{200}`$.
 - **No optimality certificate.** The search (greedy merges, a one-group-per-face seed, local refinement) has no lower bound below the 0%-loss point, so
   the gap to the optimum is unknown. Two checks so far: different merge orders and seeds land on the same cost for every constrained budget below,
-  and at 5 groups the search recovers the thesis' face layout on its own. Neither is a proof.
+  and at 5 groups the search recovers the thesis' face layout on its own. Neither is a proof. A second, independent algorithm
+  ([below](#a-second-algorithm-merging-by-jaccard-similarity)) beats the main search at some budgets by about 1%, which shows directly that the
+  main search is not optimal there.
 
 On top of this, the combinatorial problem is only a proxy: the real figure of merit is the event-level $`\varepsilon_{\rm L1}`$ with the two-view AND of
 Eq. 4.2, and the real costs depend on the energy spectrum, the coincidence window and the background rates, all of which carry uncertainty.
@@ -255,6 +257,40 @@ measured backsplash).
 - The figure of merit counts photons, not tiles. Losses grow steeply with energy: with the exact RoI veto they start above 1 GeV, with the full-PSD veto
   already at 0.2 GeV (cf. thesis Fig. 4.5).
 
+### A second algorithm: merging by Jaccard similarity
+
+Since neither search is guaranteed optimal, a second route with different blind spots is worth having. Instead of the merge that adds the least
+exact cost, it merges the two **most similar** groups (or channels) and repeats. Similarity is the weighted Jaccard index of their veto masks,
+
+```math
+J(a,b) = \frac{\sum_x w_x\,[x\in A]\,[x\in B]}{\sum_x w_x\,[x\in A\cup B]},
+```
+
+where
+- $`A`$ and $`B`$ are the masks of $`a`$ and $`b`$ (for a group, the channels its patterns are vetoed by; for a channel, the groups it vetoes);
+- $`x`$ runs over the items of the other side, and $`w_x`$ is the false-veto cost each one carries;
+- $`[\cdot]`$ is 1 when the condition holds and 0 otherwise.
+
+The best variant scales the distance $`1-J`$ by Ward's size penalty $`n_a n_b/(n_a+n_b)`$, where $`n_a`$ and $`n_b`$ are the cost weights of
+$`a`$ and $`b`$, so that two large clusters merge last ([`analytic/jaccardMerge.py`](analytic/jaccardMerge.py)).
+
+<p align="center">
+  <img src="docs/figures/jaccardMergeTree.png" alt="Dendrograms of the last group merges, Ward-scaled and plain Jaccard: each join is one merge, at the exact cost after it; the dashed line cuts at five groups" width="950">
+</p>
+
+The merge tree of the pattern groups, drawn at the exact cost after each merge, falls apart along the FIT faces at five groups without being told
+about faces (left). On the few-channel budgets, after local refinement:
+
+| $`(N_G, N_C)`$ | (64, 32) | (64, 4) | (16, 17) | (16, 4) | (5, 17) | (5, 8) |
+|---|---|---|---|---|---|---|
+| exact-cost greedy | 0.555 | 2.983 | 0.965 | 3.181 | 1.281 | 2.069 |
+| Jaccard | 0.602 | 3.950 | 1.018 | 3.929 | **1.264** | **2.049** |
+
+(cost relative to $`\sum C M`$; $`\varepsilon_{\rm L1}`$ agrees within 0.01 at most budgets, and is up to 0.02 lower for Jaccard at 4 channels).
+Jaccard is 5 to 32% costlier with 16 or 64 groups and about 1% cheaper with 5. It is also 3 to 4 times faster, and a shared merge trunk serves
+every budget at once; both families are kept as seeds for the refinement and the stochastic stage ([FINDINGS](FINDINGS.md) section 10,
+[`examples/jaccardMergeShowcase.ipynb`](examples/jaccardMergeShowcase.ipynb)).
+
 ## The program
 
 **Any detector**: [`tools/solveChannelMap.py`](tools/solveChannelMap.py) takes the incidence matrix (`.npy` or a 0/1 text file), optionally a cost matrix,
@@ -276,6 +312,7 @@ python tools/findChannelMap.py --groups 5 --channels 17 --groups-per-fit-face \
 python tools/findChannelMap.py --strategy face-rows --rows 2 --events                      # evaluate the thesis' hybrid
 ```
 
+The Jaccard route runs through `jaccardMerge.mergeByJaccard` and `scanJaccardBudgets`; `tools/compareJaccardMerge.py` compares the two algorithms.
 The search (greedy merges in several orders with exact merge costs, optional seeds, local refinement) returns good local optima, not certified ones
 ([How hard it is](#how-hard-it-is)). The detector-specific parts live in their own modules (`patternDump`, `geometryUtils`, `rateUtils`,
 `stochastic/photonEvents`); the core (`losslessUtils`, `mergeUtils`) sees only matrices.
