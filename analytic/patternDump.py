@@ -1,10 +1,10 @@
-"""Reads the trigger-pattern -> veto-tile map dumped by ProduceRoIMap (legacy/aeffcalc/algos/ProduceRoIMap.cpp, "dumpPatterns true") into a
+"""Reads the trigger-pattern -> veto-tile map dumped by ProduceRoIMap (an AeffCalc algorithm, "dumpPatterns true") into a
 boolean incidence matrix: one row per trigger pattern, one column per PSD tile, True when the tile is in the pattern's veto region (RoI).
 
-The dump in data/patterns.txt is the compact-v2 HERD layout (legacy/aeffcalc/datacards/geometry_compact.mac) with the "Calo" trigger
+The dump in data/patterns.txt is the compact-v2 HERD layout (AeffCalc geometry_compact.mac) with the "Calo" trigger
 configuration: 3 hits in 3 same-view planes, at most one mat between consecutive planes, the codes 544, 546, 564, 566 removed and a
 calorimeter cube required in the RoI (requireCalo). It only contains patterns starting in planes 8 and 9 (startLayer 8: an inference from the dump,
-the datacard next to it says 0). Each RoI is the "direct" one of UlegGeomRoi (legacy/aeffcalc/algos/UlegGeomPsdRoi.h): the PSD tiles any corner of
+the datacard next to it says 0). Each RoI is the "direct" one of UlegGeomRoi (AeffCalc UlegGeomPsdRoi.h): the PSD tiles any corner of
 which lies inside the double cone of straight lines through the first and the last mat of the pattern, above the first mat.
 
 Pattern names follow TriggerPattern::FullID: <FIT side><first plane><first mat, 2 digits><pattern code>, the code being one digit per plane,

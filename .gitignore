@@ -12,3 +12,7 @@ references/*.html
 # Cached results of the notebooks (regenerable; the photon cache is derived from AeffCalc files that are not part of this repository).
 examples/results/
 .claude/
+
+# The AeffCalc C++ algorithms and the RoI regeneration recipe stay local (not public); the regenerated RoI map in data/ is tracked.
+legacy/
+data/regeneration/

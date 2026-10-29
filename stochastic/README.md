@@ -10,7 +10,7 @@ For a channel map (pattern groups g, tile channels c, routing S) and an event sa
 
     loss = photons vetoed / photons triggered  +  lambda x background not vetoed / background triggered and crossing a tile
 
-each term computed with the real veto of the event (the first triggered planes, the AND of the two views, the energy threshold: `../legacy/aeffcalc/algos/PsdRoiVeto.cpp`).
+each term computed with the real veto of the event (the first triggered planes, the AND of the two views, the energy threshold, as in the AeffCalc PsdRoiVeto algorithm).
 A first-order version is linear in the mask: C[p, t] = photon events with pattern p and tile t fired, which `../analytic/mergeUtils.py` already takes as its `cost`.
 
 ## Optimisers, roughly in the order to try them

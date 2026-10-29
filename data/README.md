@@ -9,22 +9,15 @@ PSD design with 5 x 30 cm tiles is a different detector: none of these files app
 | `patterns.txt` | The February 2023 RoI map (planes 8-9, the "Calo" configuration, 426 patterns) | `~/AeffCalc/protons_compact/FIT/output_digitize/input_job_file/patterns.txt`, unchanged; kept for reference |
 | `psdTileRates.csv` | Activation rate per unit area of every PSD tile (s^-1 cm^-2), all species, 'NewData' flux model | Recovered from thesis Fig. 4.9 by `tools/extractPsdRates.py` |
 | `psdTileBacksplash.csv` | Probability that each tile fires per L0-triggered fiducial photon (log-uniform and E^-2 weighting) | Measured on the surviving Geant4 photons by `tools/measureBacksplash.py` |
-| `regeneration/` | Everything needed to regenerate `patterns_allPlanes.txt` | See below |
 
 ## The regenerated RoI map
 
-- **Geometry**: `regeneration/geometry_compact.mac`, the card of the AeffCalc proton study (`protons_compact/FIT`, unchanged from March 2022 to the 2023 dump).
-- **Simulation**: GGSPenny with HerdSoftware **0.3.2** (`regeneration/env_herdsoftware032.sh`: ROOT 6.22, Geant4 10.6.2, GGS 2.8.1, EventAnalysis 1.2.1), two photons
-  (`regeneration/sim.mac`); ProduceRoIMap only needs the geometry stored in the file. Later versions (0.4.0, master) no longer accept the card's
-  `psd/type tiles` and have other geometry defaults.
-- **RoI code**: `legacy/aeffcalc/algos` (July 2024, the code behind the thesis results), built as a minimal plugin against 0.3.2 with two mechanical API
-  changes (`regeneration/UlegGeomPsdRoi_hs032.patch`: `Line::Intersection` returns a point, `PsdGeoParams::Normal()`) and the include paths of 0.3.x;
-  `regeneration/CMakeLists.txt`.
-- **Job**: `regeneration/produceRoIMap_allPlanes.eaconf` (FIT digitiser with 12/10/8 mats, PSD geometric digitiser without aggregation, ProduceRoIMap with
-  `startLayer 0`, no ignored codes, no calorimeter requirement). The trigger configurations are applied afterwards (`analytic/patternDump.py`,
-  `triggerSelections`): the calorimeter requirement is `caloCubes > 0`, as ProduceRoIMap's `requireCalo`.
-- **Checks**: the "calo8" selection of this dump equals a separate ProduceRoIMap run with `startLayer 8`, `ignoreIDs {544,546,564,566}`, `requireCalo true`;
-  the anti-meteorite shield line of the geometry card changes no RoI.
+The map was produced with the ProduceRoIMap algorithm of the AeffCalc HERD analysis (the July 2024 code behind the thesis results; not part of this
+repository), run with HerdSoftware **0.3.2** (ROOT 6.22, Geant4 10.6.2, GGS 2.8.1, EventAnalysis 1.2.1) on the compact-v2 geometry card of the
+AeffCalc proton study, for every start plane, with no ignored codes and no calorimeter requirement. Later HerdSoftware versions (0.4.0, master) no
+longer accept that card and have other geometry defaults. The trigger configurations are applied afterwards (`analytic/patternDump.py`,
+`triggerSelections`; the calorimeter requirement is `caloCubes > 0`). As a check, the "calo8" selection of this map equals a separate ProduceRoIMap
+run with `startLayer 8`, the codes 544, 546, 564 and 566 ignored and the calorimeter required.
 
 **The 2023 dump is not reproduced**: with the same configuration the regenerated map has 412 patterns against 426, and 141 of the 398 shared patterns have
 the same RoI (the regenerated RoIs are smaller; mean 260 -> 179 tiles for the differing ones). The February 2023 RoI code (`~/testSFTP/algos`) with

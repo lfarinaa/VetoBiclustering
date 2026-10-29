@@ -162,7 +162,7 @@ and the L1 efficiency $`\varepsilon_{\rm L1}`$. New: $`M_{it}=1`$ if $`t\in\{T\}
 
 | Input | Source | Check |
 |---|---|---|
-| RoI of every 3IR pattern (3820; planes 0-9, all codes) | Regenerated with HerdSoftware 0.3.2 and the RoI code behind the thesis ([`data/`](data), recipe in `data/regeneration/`) | The trigger configurations of the analysis cards come out of it exactly |
+| RoI of every 3IR pattern (3820; planes 0-9, all codes) | Regenerated with HerdSoftware 0.3.2 and the RoI code behind the thesis ([`data/`](data)) | The trigger configurations of the analysis cards come out of it exactly |
 | Trigger selection "thesis" (1780 patterns) | CALO intersect, third hit in the module adjacent to the first (codes 544, 546, 564, 566 removed), no upward-pointing patterns (upgoing: particle moving towards the top) | Upward-pointing patterns identified from their RoIs: low on the side faces, never reaching TOP |
 | PSD activation rates per tile | Recovered from thesis Fig. 4.9, the only copy left (`tools/extractPsdRates.py`) | Mean, spread and maximum match the summary computed from the events to 0.5%, 3%, 0.2% |
 | Backsplash per tile, $`\varepsilon_{\rm L1}`$ | The Geant4 photons that survive locally: 2 x 10^5, 10 MeV-100 GeV, upper hemisphere; 340 L0-triggered fiducial ones ([`stochastic/photonEvents.py`](stochastic/photonEvents.py)) | Weighted to $`E^{-2}`$, the full-PSD veto keeps 0.90 of them; thesis Table 4.2: 0.89 |
@@ -338,8 +338,7 @@ background; exact Boolean rank by set cover over maximal bicliques; soft thresho
 ---
 
 **Where to go next.** [`examples/channelBudgetShowcase.ipynb`](examples/channelBudgetShowcase.ipynb) (all of the above, worked through) ·
-[User manual](docs/MANUAL.md) · [FINDINGS.md](FINDINGS.md) (results, and issues found in the legacy code) · [`data/README.md`](data/README.md) (provenance) ·
-[`legacy/aeffcalc/`](legacy/aeffcalc) (the C++ trigger and veto algorithms).
+[User manual](docs/MANUAL.md) · [FINDINGS.md](FINDINGS.md) (results, and issues found in the AeffCalc code) · [`data/README.md`](data/README.md) (provenance).
 
 ## References
 

@@ -16,8 +16,7 @@ nbstripout --install                   # once, so that notebook outputs are not 
 | [`analytic/`](../analytic) | Reading the RoI map, the lossless channel maps, Boolean-rank bounds, the search for channel maps under a budget, the PSD layout, plots |
 | [`stochastic/`](../stochastic) | Event level: `photonEvents.py` redoes L0 and L1 on the surviving Geant4 photons and measures the L1 efficiency of any channel map; the iterative and relaxed optimisations are planned (its README, ROADMAP) |
 | [`examples/`](../examples) | Notebooks; each runs top to bottom and puts `../analytic` on its path |
-| [`data/`](../data) | The RoI maps (regenerated: `patterns_allPlanes.txt`; February 2023: `patterns.txt`), the PSD tile rates, the measured backsplash, the regeneration recipe; provenance in its README |
-| [`legacy/aeffcalc/`](../legacy/aeffcalc) | The C++ algorithms of the AeffCalc HERD analysis that define patterns and RoIs, with the datacards that configured them; reference only, not built here |
+| [`data/`](../data) | The RoI maps (regenerated: `patterns_allPlanes.txt`; February 2023: `patterns.txt`), the PSD tile rates, the measured backsplash; provenance in its README |
 | [`tests/`](../tests) | Sanity checks (`python tests/test_sanityChecks.py`) |
 | [`tools/solveChannelMap.py`](../tools/solveChannelMap.py) | The detector-agnostic program: any incidence matrix (`.npy` or 0/1 text), optional cost, row/column labels and names; lists the map as text and JSON |
 | [`tools/findChannelMap.py`](../tools/findChannelMap.py) | The HERD showcase front end: find (or evaluate) a channel map for a budget, trigger selection, coincidence window and constraints, and list it (text, JSON); `--events` adds the measured L1 efficiency |
@@ -66,9 +65,10 @@ To use real costs, pass `cost=` (an array of the matrix's shape: expected false 
 
 Run one with `jupyter nbconvert --to notebook --execute --inplace examples/<name>.ipynb`; the exit code is 0 when every cell ran.
 
-## 5. The legacy code
+## 5. The AeffCalc code
 
-`legacy/aeffcalc/algos/` holds the HERD EventAnalysis algorithms (Valerio Formato, Nicola Mori, Luis Fariña, 2019-2024) as copied from `~/AeffCalc/algos`:
+The patterns and RoIs come from the C++ EventAnalysis algorithms of the AeffCalc HERD analysis, which are not part of this repository (a local copy
+sits in the gitignored `legacy/` folder). Their roles are listed below.
 
 | File | Role |
 |---|---|
@@ -79,8 +79,8 @@ Run one with `jupyter nbconvert --to notebook --execute --inplace examples/<name
 | `PsdRoiVeto.{h,cpp}`, `MultiRoiVeto.{h,cpp}` | The veto on events: the intersection of the even-view and odd-view RoIs of the first triggers, and the energy threshold |
 | `NewPsdTileAggregator.cpp` | The PSD geometric digitiser with tile aggregation factors: tile merging as it exists in HerdSoftware |
 
-`legacy/aeffcalc/datacards/` holds the geometry (`geometry_compact.mac`), the digitisation card that runs ProduceRoIMap (commented out there) and the analysis card that chains the
-trigger and veto configurations ("Base", "NoPlusMinus", "Calo", ...). `PatternTools.h` of AeffCalc is an older copy of `TriggerPattern.h` and was not copied.
+The AeffCalc datacards hold the geometry (`geometry_compact.mac`), the digitisation card that runs ProduceRoIMap and the analysis card that chains the
+trigger and veto configurations ("Base", "NoPlusMinus", "Calo", ...).
 
 ## 6. Conventions
 
