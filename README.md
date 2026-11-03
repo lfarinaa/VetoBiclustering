@@ -288,8 +288,7 @@ about faces (left). On the few-channel budgets, after local refinement:
 
 (cost relative to $`\sum C M`$; $`\varepsilon_{\rm L1}`$ agrees within 0.01 at most budgets, and is up to 0.02 lower for Jaccard at 4 channels).
 Jaccard is 5 to 32% costlier with 16 or 64 groups and about 1% cheaper with 5. It is also 3 to 4 times faster, and a shared merge trunk serves
-every budget at once; both families are kept as seeds for the refinement and the stochastic stage ([FINDINGS](FINDINGS.md) section 10,
-[`examples/jaccardMergeShowcase.ipynb`](examples/jaccardMergeShowcase.ipynb)).
+every budget at once; both families are kept as seeds for the refinement and the stochastic stage ([`examples/jaccardMergeShowcase.ipynb`](examples/jaccardMergeShowcase.ipynb)).
 
 ## The program
 
@@ -338,7 +337,7 @@ background; exact Boolean rank by set cover over maximal bicliques; soft thresho
 ---
 
 **Where to go next.** [`examples/channelBudgetShowcase.ipynb`](examples/channelBudgetShowcase.ipynb) (all of the above, worked through) ·
-[User manual](docs/MANUAL.md) · [FINDINGS.md](FINDINGS.md) (results, and issues found in the AeffCalc code) · [`data/README.md`](data/README.md) (provenance).
+[User manual](docs/MANUAL.md) · [`data/README.md`](data/README.md) (provenance).
 
 ## References
 

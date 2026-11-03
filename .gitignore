@@ -16,3 +16,6 @@ examples/results/
 # The AeffCalc C++ algorithms and the RoI regeneration recipe stay local (not public); the regenerated RoI map in data/ is tracked.
 legacy/
 data/regeneration/
+
+# Working log, kept in the private ~/ProjectNotes repository (this is a symbolic link to it)
+FINDINGS.md

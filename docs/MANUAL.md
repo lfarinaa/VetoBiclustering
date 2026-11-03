@@ -1,6 +1,6 @@
 # User manual
 
-How to run VetoBiclustering and where everything is. The core (`losslessUtils`, `mergeUtils`, `tools/solveChannelMap.py`) is detector-agnostic; the rest is the HERD showcase, in the design of the thesis and paper. For the problem and the headline numbers see the [README](../README.md); for results, [FINDINGS.md](../FINDINGS.md).
+How to run VetoBiclustering and where everything is. The core (`losslessUtils`, `mergeUtils`, `tools/solveChannelMap.py`) is detector-agnostic; the rest is the HERD showcase, in the design of the thesis and paper. For the problem and the headline numbers see the [README](../README.md).
 
 ## 1. Install
 
