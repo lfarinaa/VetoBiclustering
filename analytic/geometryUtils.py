@@ -1,7 +1,7 @@
 """Schematic 3D layout of the PSD tiles, for sketches and for the face-based veto strategies of the thesis (section 4.2.2).
 
 The tile grids are those of the volume IDs in the dump (patternDump.py): TOP ID = r x 14 + c, side ID = h x 9 + v. How each grid sits on the cube is
-inferred from the dump itself, from which edge of each face the RoIs of the neighbouring FIT faces reach (FINDINGS 5):
+inferred from the dump itself, from which edge of each face the RoIs of the neighbouring FIT faces reach:
 
 - every side face touches TOP along v = 0 (v grows downwards);
 - on TOP, r grows towards +X (Xpos borders r = 13, Xneg r = 0) and c towards +Y (Ypos borders c = 13, Yneg c = 0);

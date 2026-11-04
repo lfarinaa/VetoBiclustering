@@ -33,7 +33,7 @@ def pointsUpwards(pattern):
     (section 4.2.1) and TriggerArrays.cpp removes them with removeUpwardsPatterns (TriggerPattern::PointsUpwards): on a lateral face the inner mat
     lies above the outer one. Only the even planes of the side faces are segmented in height
     (8 mats); there the mat index grows downwards, as the RoIs show: patterns with a net negative mat step have RoIs low on the face that never reach
-    TOP (tracks from below), those with a net positive step reach the top PSD (tracks from above). FINDINGS 7. Steep 544 patterns on the even planes of the side faces are upgoing (their RoIs never reach TOP; six of them have empty RoIs)."""
+    TOP (tracks from below), those with a net positive step reach the top PSD (tracks from above). Steep 544 patterns on the even planes of the side faces are upgoing (their RoIs never reach TOP; six of them have empty RoIs)."""
     return pattern.fitSide != "TOP" and pattern.firstPlane % 2 == 0 and sum(pattern.matSteps) < 0
 
 

@@ -23,7 +23,7 @@ run with `startLayer 8`, the codes 544, 546, 564 and 566 ignored and the calorim
 the same RoI (the regenerated RoIs are smaller; mean 260 -> 179 tiles for the differing ones). The February 2023 RoI code (`~/testSFTP/algos`) with
 HerdSoftware 0.3.2 does not reproduce it either (238 of 412 identical). The HerdSoftware branch the cluster ran in February 2023 (0.3_bugfix) has no
 geometry change after 0.3.2, and the geometry card is the same, so the difference is in the code or the simulation behind that dump, which could not
-be recovered (FINDINGS 7).
+be recovered.
 
 ## Format of the dumps
 

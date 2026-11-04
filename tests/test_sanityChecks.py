@@ -3,7 +3,7 @@
 Run all of them (about half a minute):   python tests/test_sanityChecks.py
 With pytest, if installed:                pytest tests
 
-Each check states what it compares. The numbers checked against the dump are those of data/patterns.txt; regenerate them in FINDINGS.md if the dump changes.
+Each check states what it compares. The numbers checked against the dump are those of data/patterns.txt; regenerate them if the dump changes.
 """
 import pathlib
 import sys
@@ -140,7 +140,7 @@ def test_regenerated_dump_is_consistent():
     assert len(patterns) == 3820 and {p.firstPlane for p in patterns} == set(range(10)) and len({p.code for p in patterns}) == 9
     calo8 = pd.selectPatterns(patterns, **pd.triggerSelections["calo8"])
     assert len(calo8) == 412 and all(p.caloCubes > 0 and p.firstPlane in (8, 9) and p.code not in pd.twoStepCodes for p in calo8)
-    empty = [p for p in patterns if not p.tiles]                       # Patterns no tile can veto (FINDINGS 7): six steep 544s, removed by every selection that drops two-step codes.
+    empty = [p for p in patterns if not p.tiles]                       # Patterns no tile can veto: six steep 544s, removed by every selection that drops two-step codes.
     assert len(empty) == 6 and all(p.code == "544" for p in empty)
     assert all(p.tiles for p in pd.selectPatterns(patterns, **pd.triggerSelections["thesis"]))
     assert len(pd.evenOddBlocks(patterns)) == 5 * 5

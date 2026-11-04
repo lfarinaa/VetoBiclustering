@@ -32,7 +32,7 @@ nbstripout --install                   # once, so that notebook outputs are not 
 | `rateUtils.py` | Per-tile veto probability of a good photon: measured backsplash $b_t$ and accidentals $q_t = 1-e^{-r_t A\tau}$; the cost matrix $C_{it}=-\ln(1-\pi_t)$ |
 | `losslessUtils.py` | `ChannelMap` (groups $g$, channels $c$, routing $S$, the mask $V$), `findLosslessChannelMap` ($N_G^*$, $N_C^*$), `computeUnionRouting`, fooling-set and greedy-cover bounds on the Boolean rank |
 | `mergeUtils.py` | `findChannelMap` (the search: greedy in three orders + seeds + local refinement, optional labels a merge may not cross), `mergeGreedily`, `scanBudgets` (a grid of budgets), `refineLocally`, `computeMaskCost` ($\xi$, $\kappa$), `computePairMetrics` (event-level $\xi_{\rm ev}$, $\kappa_{\rm ev}$, relative $\varepsilon_{\rm L1}$), `channelMapFromMasks`, `describeChannelMap` |
-| `jaccardMerge.py` | The alternative route: agglomeration by weighted Jaccard similarity (`mergeByJaccard`, `scanJaccardBudgets`; variants `jaccard`, `costJaccard`, `wardJaccard`), with the exact cost carried along every merge; compared with the greedy in FINDINGS 10 |
+| `jaccardMerge.py` | The alternative route: agglomeration by weighted Jaccard similarity (`mergeByJaccard`, `scanJaccardBudgets`; variants `jaccard`, `costJaccard`, `wardJaccard`), with the exact cost carried along every merge; compared with the greedy in the README |
 | `geometryUtils.py` | The schematic PSD layout (adjacency inferred from the dump), `faceExtendedMask` (the thesis' face + n rows veto), tile quads for 3D sketches |
 | `plotUtils.py` | Style; RoI per face; ordered incidence matrix and RoI overlap; the unfolded PSD of thesis Fig. 4.9; 3D cube sketches |
 
@@ -85,5 +85,5 @@ trigger and veto configurations ("Base", "NoPlusMinus", "Calo", ...).
 ## 6. Conventions
 
 - camelCase everywhere, no unit suffixes; every number in the code carries its source or the word "Placeholder".
-- Tolerances and counts checked by the tests are statements about the dump: change one only with a reason in FINDINGS.md.
+- Tolerances and counts checked by the tests are statements about the dump: change one only with a reason in the commit message.
 - AI assistance is credited with an `Assisted-by: <harness>:<model>` trailer, never with a co-author or sign-off line; see [CONTRIBUTING.md](../CONTRIBUTING.md).

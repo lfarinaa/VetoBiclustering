@@ -205,7 +205,7 @@ def scanJaccardBudgets(matrix, groupBudgets, channelBudgets, cost=None, variant=
 
     trunk, optional (N_G, N_C) at or above every budget: both sides are first merged down to it once (in trunkOrder), and every budget branches
     from there. A merge path is shared by every budget below where it stops, so the trunk is computed once; it also changes the path (some channels
-    merge before the groups reach their budget), which on the HERD showcase moved the cost by -16% to +11% per budget (FINDINGS 10)."""
+    merge before the groups reach their budget), which on the HERD showcase moved the cost by -16% to +11% per budget."""
     if order not in ("channelsFirst", "groupsFirst"):
         raise ValueError("scanJaccardBudgets takes the sequential orders; use mergeByJaccard for 'alternating'")
     cost = np.ones(matrix.shape) if cost is None else np.asarray(cost, dtype=float)
