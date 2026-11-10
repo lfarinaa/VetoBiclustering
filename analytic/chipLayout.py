@@ -1018,10 +1018,13 @@ def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capac
 
 
 def polishLayout(matrix, cost, tileKeys, layout, numberOfGroups, numberOfBoards, capacity=defaultCapacity, borderPenalty=0.0, contiguousBoards=True,
-                 chipBudget=None, maximumSweeps=50, seed=0, neighbours=None, boardGraph=None, patternLabels=None, groupLabels=None):
+                 chipBudget=None, maximumSweeps=50, seed=0, neighbours=None, boardGraph=None, patternLabels=None, groupLabels=None,
+                 maximumChainLength=3, chainBreadth=8):
     """A deterministic descent after the annealing: sweeps over the perimeter of every chip test, for each pair of neighbouring tiles t, u of
     different chips, moving t to u's chip, swapping t and u, and double swaps (t and a neighbour of t in its chip exchanged with u and a neighbour
-    of u in its chip, the two pairs facing each other); then every chip to a board it touches and every swap of two chips of touching boards; then
+    of u in its chip, the two pairs facing each other), and, when u's chip is full and t would be cheaper there, ejection chains (t joins it and
+    room is made by passing one boundary tile along up to maximumChainLength neighbouring chips to one with room, keeping the chainBreadth
+    cheapest partial chains at each link); then every chip to a board it touches and every swap of two chips of touching boards; then
     every pattern into every other group. Any change that lowers the cost (veto cost plus borderPenalty per chip border) and keeps the constraints
     (capacity, connected chips, boards connected on the cube if contiguousBoards, at most chipBudget chips) is applied at once. Sweeps repeat until
     none improves. Returns (layout, {move type: changes applied}, cost history per sweep), the cost being the veto cost relative to sum C M."""
@@ -1044,7 +1047,7 @@ def polishLayout(matrix, cost, tileKeys, layout, numberOfGroups, numberOfBoards,
     budget = numberOfChips if chipBudget is None else chipBudget
     patternLabel = None if patternLabels is None else np.asarray(patternLabels)
     blockCostOf = lambda count, zero: np.where(count > 0, zero, 0.0)
-    applied = {"tile move": 0, "tile swap": 0, "double swap": 0, "chip move": 0, "chip swap": 0, "pattern move": 0}
+    applied = {"tile move": 0, "tile swap": 0, "double swap": 0, "chain": 0, "chip move": 0, "chip swap": 0, "pattern move": 0}
 
     def neighboursOf(tile):
         return neighbourIndices[indexPointer[tile]:indexPointer[tile + 1]]
@@ -1139,6 +1142,48 @@ def polishLayout(matrix, cost, tileKeys, layout, numberOfGroups, numberOfBoards,
                 boardTiles[board] += sign * members[chip].size
         return False
 
+    def tileShiftCost(tile, toChip):
+        """Veto-cost change of moving one tile to another chip on its own (a guide for building chains, not the final test)."""
+        fromBoard, toBoard = boardOf[chipOf[tile]], boardOf[toChip]
+        if fromBoard == toBoard:
+            return 0.0
+        return float((blockCostOf(blockCount[:, fromBoard] - groupTile[:, tile], blockZero[:, fromBoard] - groupTileZero[:, tile])
+                      - blockCostOf(blockCount[:, fromBoard], blockZero[:, fromBoard])
+                      + blockCostOf(blockCount[:, toBoard] + groupTile[:, tile], blockZero[:, toBoard] + groupTileZero[:, tile])
+                      - blockCostOf(blockCount[:, toBoard], blockZero[:, toBoard])).sum())
+
+    def tryChains(tile, fullChip):
+        """Ejection chains: tile joins the full chip fullChip, which passes one boundary tile to a neighbouring chip, and so on (up to
+        maximumChainLength links) until a chip with room takes the last one. At each link the cheapest boundary tile to pass on is chosen; the
+        whole chain is applied if it lowers the cost. Returns True on success."""
+        startChip = int(chipOf[tile])
+        frontier = [({tile: fullChip}, fullChip)]
+        for _ in range(maximumChainLength):
+            nextFrontier = []
+            for assignment, giver in frontier:
+                passed = {t for t, chip in assignment.items() if chip != giver}
+                receivers = {}
+                for member in np.flatnonzero(chipOf == giver):
+                    member = int(member)
+                    if member in assignment:
+                        continue
+                    for other in neighboursOf(member):
+                        receiver = int(chipOf[other])
+                        if receiver in (giver, startChip) or receiver in assignment.values():
+                            continue
+                        shift = tileShiftCost(member, receiver)
+                        if receiver not in receivers or shift < receivers[receiver][0]:
+                            receivers[receiver] = (shift, member)
+                for receiver, (_, member) in receivers.items():
+                    chain = dict(assignment); chain[member] = receiver
+                    if chipSize[receiver] < capacity:
+                        if tryTiles(chain, "chain"):
+                            return True
+                    else:
+                        nextFrontier.append((chain, receiver))
+            frontier = sorted(nextFrontier, key=lambda entry: sum(tileShiftCost(t, c) for t, c in entry[0].items()))[:chainBreadth]
+        return False
+
     def currentCost():
         return float(blockCostOf(blockCount, blockZero).sum()) / reference
 
@@ -1153,6 +1198,9 @@ def polishLayout(matrix, cost, tileKeys, layout, numberOfGroups, numberOfBoards,
                 if own == other:
                     continue
                 if tryTiles({t: other}, "tile move") or tryTiles({t: other, u: own}, "tile swap"):
+                    improvements += 1
+                    break
+                if chipSize[other] >= capacity and tileShiftCost(t, other) < 0 and tryChains(t, other):
                     improvements += 1
                     break
                 done = False
