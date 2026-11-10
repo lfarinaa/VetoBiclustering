@@ -8,7 +8,9 @@
 - docs/figures/constrainedMap3d.png: the (5, 8) map with one group per FIT face and every channel inside one PSD face, on the PSD in 3D from two sides
   (constrained.pkl, same notebook);
 - docs/figures/jaccardMaps3d.png: the refined (5, 8) maps of the Jaccard merge and of the exact-cost greedy, in 3D from two sides
-  (jaccardComparison.pkl, from tools/compareJaccardMerge.py).
+  (jaccardComparison.pkl, from tools/compareJaccardMerge.py);
+- docs/figures/chipLayout.png: the best (5, 8) layout with front-end chips (45 chips of 32 inputs, boards contiguous on the cube), after the
+  polish, on the unfolded PSD (chipLayout.pkl, from examples/chipLayoutShowcase.ipynb).
 """
 import pathlib
 import pickle
@@ -29,6 +31,7 @@ import mergeUtils as mu
 import geometryUtils as gu
 import plotUtils as pu
 import rateUtils as ru
+import chipLayout as cl
 
 resultsDirectory, figureDirectory = root / "examples/results", root / "docs/figures"
 views = (-60, 120)                                                         # Azimuths in degrees: together they show all five PSD faces.
@@ -109,6 +112,23 @@ def main():
     drawMapsIn3d(figureDirectory / "constrainedMap3d.png",
                  {"one group per FIT face, each channel inside one PSD face": constrained[((5, 8), "groups per FIT face, channels per PSD face")][0]},
                  tileKeys, fitFace)
+    chipRuns = pickle.loads((resultsDirectory / "chipLayout.pkl").read_bytes())
+    settings = chipRuns["settings"]
+    cost = ru.costMatrix(matrix.shape[0], ru.tileVetoProbability(tileKeys, window=100e-9))     # 100 ns: Placeholder window, as in the notebook.
+    reference = float((cost * matrix).sum())
+    neighbours = cl.tileNeighbours(tileKeys)
+    budget = sum(cl.minimumChips(tileKeys, settings["capacity"]).values())
+    candidates = {key: run for key, run in chipRuns["runs"].items() if run["chips"] <= budget and key[0] != "temperature from all moves"}
+    bestKey = min(candidates, key=lambda key: candidates[key]["cost"])
+    best, _, _ = cl.polishLayout(matrix, cost, tileKeys, candidates[bestKey]["layout"], settings["groups"], settings["boards"], settings["capacity"],
+                                 settings["borderPenalty"] * reference, True, budget, neighbours=neighbours)
+    veto = mu.computeMaskCost(matrix, best.channelMap(matrix), cost)[0] / reference
+    figure, axes = plt.subplots(1, 2, figsize=(14, 6.6), constrained_layout=True)
+    pu.plotChipLayout(axes, best, tileKeys, neighbours)
+    figure.suptitle(f"(N_G, N_C) = ({settings['groups']}, {settings['boards']}): {budget} chips of {settings['capacity']} inputs; colour = board "
+                    f"(veto channel), shade = chip; cost {veto:.3f} of sum C M", color=pu.inkPrimary)
+    figure.savefig(figureDirectory / "chipLayout.png", dpi=100)
+    plt.close(figure)
     comparison = pickle.loads((resultsDirectory / "jaccardComparison.pkl").read_bytes())
     drawMapsIn3d(figureDirectory / "jaccardMaps3d.png",
                  {"Jaccard merge, refined": comparison["refined"][("jaccard", (5, 8))]["map"],

@@ -34,6 +34,7 @@ nbstripout --install                   # once, so that notebook outputs are not 
 | `losslessUtils.py` | `ChannelMap` (groups $g$, channels $c$, routing $S$, the mask $V$), `findLosslessChannelMap` ($N_G^*$, $N_C^*$), `computeUnionRouting`, fooling-set and greedy-cover bounds on the Boolean rank |
 | `mergeUtils.py` | `findChannelMap` (the search: greedy in three orders + seeds + local refinement, optional labels a merge may not cross), `mergeGreedily`, `scanBudgets` (a grid of budgets), `refineLocally`, `computeMaskCost` ($\xi$, $\kappa$), `computePairMetrics` (event-level $\xi_{\rm ev}$, $\kappa_{\rm ev}$, relative $\varepsilon_{\rm L1}$), `channelMapFromMasks`, `describeChannelMap` |
 | `jaccardMerge.py` | The alternative route: agglomeration by weighted Jaccard similarity (`mergeByJaccard`, `scanJaccardBudgets`; variants `jaccard`, `costJaccard`, `wardJaccard`), with the exact cost carried along every merge; compared with the greedy in docs/HERD_SHOWCASE.md |
+| `chipLayout.py` | Front-end chips between tiles and boards: `tileNeighbours`, `boardNeighbours` (contacts across cube edges), `minimumChips`, starts (`mergeTilesIntoChips`, `repairChips`, `metisChips`, `serpentineChips`), `mergeChipsIntoContiguousBoards`, `annealLayout` (numba), `polishLayout`, `findChipLayout` (the whole search), `checkLayout` |
 | `geometryUtils.py` | The schematic PSD layout (adjacency inferred from the dump), `faceExtendedMask` (the thesis' face + n rows veto), tile quads for 3D sketches |
 | `plotUtils.py` | Style; RoI per face; ordered incidence matrix and RoI overlap; the unfolded PSD of thesis Fig. 4.9; 3D cube sketches |
 
@@ -53,6 +54,14 @@ print(pe.l1Efficiency(triggered, best.vetoMask(), spectralIndex=2.0)[0])
 print(mu.describeChannelMap(best, patterns, keys, M))
 ```
 
+With readout chips (32 inputs each, the minimum number of chips, boards contiguous on the cube), the whole search and its candidates:
+
+```python
+import chipLayout as cl
+best, candidates = cl.findChipLayout(M, cost, keys, numberOfGroups=5, numberOfBoards=8, capacity=32)
+print(best.numberOfChips, mu.computeMaskCost(M, best.channelMap(M), cost)[0] / (cost * M).sum())
+```
+
 Or from the shell: `python tools/findChannelMap.py --groups 16 --channels 64 --json map.json` (see `--help` for the constraints and strategies).
 To use real costs, pass `cost=` (an array of the matrix's shape: expected false vetoes of good photons if tile $t$ joins the mask of pattern $i$) or `--cost file.npy`.
 
@@ -61,6 +70,7 @@ To use real costs, pass `cost=` (an array of the matrix's shape: expected false 
 | Notebook | What it shows | Run time |
 |---|---|---|
 | [`vetoPatternShowcase.ipynb`](../examples/vetoPatternShowcase.ipynb) | A first look on the February 2023 dump: RoIs on the PSD, the ordered incidence matrix and RoI overlaps, RoIs per tile on the unfolded PSD, the lossless counts, a first look at budgets for the top FIT | about 1.5 min |
+| [`chipLayoutShowcase.ipynb`](../examples/chipLayoutShowcase.ipynb) | Readout chips: the model, the neighbour graph at a corner, move sizes and the annealing temperature, the cost along the annealing per start, the chip border penalty, swaps, the polish, the best layout | about 15 min; 15 s from the cache |
 | [`channelBudgetShowcase.ipynb`](../examples/channelBudgetShowcase.ipynb) | **The main one**: notation and mathematics, the regenerated data, rates and backsplash, 3D sketches of the event RoI, the thesis' strategies on Geant4 photons, L1 efficiency against the number of channels, solutions constrained to a per-face layout | about 30 min; a minute with `BICLUSTERING_USE_CACHE=1` |
 | [`jaccardMergeShowcase.ipynb`](../examples/jaccardMergeShowcase.ipynb) | The Jaccard route against the exact-cost greedy: which variant is best, cost and L1 efficiency per budget, exact cost along the merge paths and per-step checks, the merge paths as dendrograms, the (5, 8) maps as group-channel networks and on the PSD in 3D | about 1 min (needs `examples/results/jaccardComparison.pkl` from `tools/compareJaccardMerge.py`) |
 

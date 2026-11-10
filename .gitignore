@@ -19,3 +19,6 @@ data/regeneration/
 
 # Working log, kept in the private ~/ProjectNotes repository (this is a symbolic link to it)
 FINDINGS.md
+
+# Text extracts of the references (copyright), as for the PDFs.
+references/text/

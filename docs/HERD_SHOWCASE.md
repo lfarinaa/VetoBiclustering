@@ -138,6 +138,30 @@ marks a group with patterns of more faces.
  All 12 budgets, the merge paths
 and the maps are in [`examples/jaccardMergeShowcase.ipynb`](../examples/jaccardMergeShowcase.ipynb).
 
+## Readout chips
+
+With front-end chips of 32 inputs between the tiles and the boards ([PROBLEM.md](PROBLEM.md#readout-chips)), at $`(N_G, N_C) = (5, 8)`$ and the
+minimum of 45 chips (13 on the top face, 8 per side), the costs relative to $`\sum_{it} C_{it} M_{it}`$ are as follows (three annealing seeds of
+$`2\times10^7`$ steps each, chip border penalty $`10^{-4}\sum C M`$).
+
+| Layout | Cost |
+|---|---|
+| best $`(5, 8)`$ map without chips | 2.05 |
+| 45 chips, boards free | 2.11 |
+| 45 chips, boards contiguous on the cube: serpentine start / METIS start / repaired tile merge | 3.02 to 3.05 / 2.54 to 2.55 / 2.178 to 2.183 |
+| the same after the polish (double swaps, ejection chains) | 2.176 |
+| 46 chips (9 on Xpos), boards contiguous | 2.124 |
+
+<p align="center">
+  <img src="figures/chipLayout.png" alt="The best (5, 8) layout with 45 chips of 32 inputs on the unfolded PSD" width="950">
+</p>
+
+- The start decides the result: annealing keeps close to its start basin, and the repaired tile merge is the best of the three starts.
+- The minimum chip budget leaves little room (1440 places for 1328 tiles; 25 of the 45 chips hold 32 tiles), and most of the remaining cost is
+  that squeeze: of the moves the polish tests on a chip perimeter, most are blocked by full chips, and one more chip lowers the cost by 2.4% and
+  straightens the board boundaries. Some board shapes follow the RoIs regardless of room, such as the strip of Xpos along its edge with Yneg.
+- The chip shapes and the per-move statistics are in [`examples/chipLayoutShowcase.ipynb`](../examples/chipLayoutShowcase.ipynb).
+
 ## Limitations
 
 - The maps below the zero-cost point are local optima of heuristic searches, with no bound on the gap to the optimum.

@@ -69,6 +69,22 @@ about faces:
 Neither algorithm wins everywhere: the greedy is 5 to 32% cheaper with 16 or 64 groups, the Jaccard merge about 1% cheaper with 5 groups and
 3 to 4 times faster ([comparison](docs/HERD_SHOWCASE.md#the-two-algorithms-compared)). Both are kept as starting points for the next stage.
 
+## Readout chips
+
+The tiles are not wired to the veto boards one by one: front-end chips read a limited number of neighbouring tiles each (32 here, a setting) and
+give one fast-OR output, and a board, one veto channel, ORs whole chips. The channel map becomes a three-level layout, tiles into chips into
+boards, with every chip on one face and connected, every board one connected region on the cube, and a budget on the number of chips (at least
+the tiles of each face divided by the capacity). The search merges neighbouring tiles into chips by cost, repairs the result to the chip budget
+by passing tiles along chains of neighbouring chips, then anneals (single tiles between chips, tile swaps, chips between boards, patterns between
+groups) and ends with a deterministic polish of every chip perimeter, including double swaps and ejection chains.
+
+<p align="center">
+  <img src="docs/figures/chipLayout.png" alt="The best (5, 8) layout with 45 chips of 32 inputs on the unfolded PSD, both layers: tiles coloured by board, each chip in its own shade, chip borders and face edges drawn" width="950">
+</p>
+
+On HERD, the minimum of 45 chips with contiguous boards costs about 6% more than the same budget without chips, and most of it is the room on
+the faces: one more chip (46) recovers 2.4% and straightens the board boundaries ([details](docs/HERD_SHOWCASE.md#readout-chips)).
+
 ## The HERD showcase
 
 This section gives the main result; the [**full HERD showcase**](docs/HERD_SHOWCASE.md) collects all of them.

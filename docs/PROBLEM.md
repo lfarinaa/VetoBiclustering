@@ -137,6 +137,50 @@ pattern dependence automatically. The figure of merit is the L1 efficiency $`\va
 of a Geant4 simulation that also pass L1 with the merged map, accidental hits included. Two diagnostics of a mask complement it: the excess $`\xi`$,
 the tiles added to the RoIs as a fraction of the RoI tiles, and the leak $`\kappa`$, the RoI tiles missing from the mask as the same fraction.
 
+## Readout chips
+
+In hardware the veto elements are read by front-end chips, each with a limited number of inputs and one fast-OR output, and the boards that form
+the channels OR whole chips. The channel of a tile is then the board of its chip, and the map has three levels: the chip $`h(t)`$ of every tile
+$`t`$, the board $`b(h)`$ of every chip, and the groups and routing as before, so that
+
+```math
+V_{it} = S_{g(i)\, b(h(t))},
+```
+
+where
+- $`h(t)`$ is the chip that reads tile $`t`$;
+- $`b(h)`$ is the board, one of the $`N_C`$ channels, that receives the output of chip $`h`$;
+- $`g(i)`$ and $`S`$ are the pattern group and the routing of the statement above.
+
+The constraints are:
+- **capacity**: a chip reads at most $`M_{\rm chip}`$ tiles (32 by default, a placeholder for the input count of the chip);
+- **neighbours**: the tiles of a chip lie on one face and are connected in the neighbour graph (cells sharing an edge in a layer, or the same
+  or edge-sharing cells of the two layers);
+- **contiguous boards** (optional, on by default): every board is one connected region of the cube, the neighbour graph extended by the contacts
+  across cube edges;
+- **chip budget**: at most $`N_{\rm chip}`$ chips. Without a budget the best layout has one tile per chip, since chips only restrict which tile sets
+  a board can hold; the default is the minimum, the tiles of each face divided by $`M_{\rm chip}`$ and rounded up.
+
+The objective is the cost of the statement plus a small penalty $`\lambda`$ per chip border (a pair of neighbouring tiles on different chips). The
+veto cost does not depend on the shape of a chip within its board, so without it the chips drift into winding shapes; with $`\lambda`$ of
+$`10^{-4}\sum C M`$ they become compact for about 0.5% of veto cost.
+
+The search (`analytic/chipLayout.py`, `findChipLayout`) merges and then refines:
+1. pattern groups from the groups-first exact-cost greedy or the Ward-scaled Jaccard merge;
+2. chips by merging neighbouring tiles by exact cost under the capacity. The merge stalls above the budget with chips too full to join (51 chips
+   for 45 on HERD), so a repair dissolves the smallest chips, making room along chains of neighbouring chips when the neighbours are full;
+3. boards by the exact-cost greedy over whole chips, joining only chips that touch on the cube;
+4. simulated annealing over five moves (a tile to a neighbouring chip, two tiles swapping chips, a chip to another board, two chips swapping
+   boards, a pattern to another group), every move keeping the constraints. The moves differ in cost by three orders of magnitude, and the
+   temperature is set from the finest, the tile moves: set from all moves, union routing drives the map onto the plateau where every group is
+   vetoed by every board, from which no single move returns;
+5. a deterministic polish of every chip perimeter: tile moves, swaps, double swaps (two facing pairs of tiles exchanged, the move that changes
+   two full chips), ejection chains (a tile joins a full chip, which passes a tile along neighbouring chips to one with room), chip moves and
+   swaps, and pattern moves, until none lowers the cost.
+
+The number of chips could instead be left free, with a cost per chip in the objective; the trade-off between chips and veto cost would then come
+out of the optimisation rather than from a fixed budget.
+
 ## The Jaccard merge
 
 The second algorithm is an agglomerative hierarchical clustering: it starts from the lossless map, merges the two most similar groups (or channels),
