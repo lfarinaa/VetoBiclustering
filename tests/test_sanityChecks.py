@@ -228,7 +228,7 @@ def test_chip_layout_respects_the_hardware():
     """Chips (chipLayout): the neighbour graph is symmetric and never joins faces; the serpentine tiling and every annealed layout keep each chip on
     one face, connected and within the capacity; the cost tracked by the annealing equals the cost recomputed from the map and is never above the
     start; a start with more chips than the budget is brought within it, by the annealing penalty and by the repair (to the minimum); the METIS
-    partition meets the budget."""
+    partition meets the budget; with contiguous boards every board stays one region on the cube through the annealing."""
     import chipLayout as cl
     matrix, tileKeys = incidence.matrix, incidence.tileKeys
     cost = np.random.default_rng(1).uniform(0.5, 2.0, matrix.shape)
@@ -257,6 +257,13 @@ def test_chip_layout_respects_the_hardware():
     metis = cl.metisChips(matrix, cost, tileKeys, budget, 32)
     cl.checkLayout(cl.ChipLayout(rowGroup, metis, np.zeros(metis.max() + 1, dtype=int)), tileKeys, 32)
     assert np.unique(metis).size <= sum(budget.values())
+    boardGraph = cl.boardNeighbours(tileKeys)
+    assert cl._isConnected(np.arange(len(tileKeys)), *boardGraph)                  # The cube surface is one piece once faces touch.
+    contiguousStart = cl.ChipLayout(rowGroup, repaired, cl.mergeChipsIntoContiguousBoards(matrix, cost, tileKeys, rowGroup, repaired, 6, boardGraph))
+    cl.checkLayout(contiguousStart, tileKeys, 32, contiguousBoards=True)
+    contiguous, _, _ = cl.annealLayout(matrix, cost, tileKeys, contiguousStart, 4, 6, capacity=32, steps=100_000, seed=0, chipBudget=sum(budget.values()),
+                                       contiguousBoards=True, boardGraph=boardGraph)
+    cl.checkLayout(contiguous, tileKeys, 32, contiguousBoards=True)
 
 
 

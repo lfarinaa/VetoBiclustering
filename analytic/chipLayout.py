@@ -15,13 +15,15 @@ The search merges up to a point and then anneals:
 2. chips: merging neighbouring tiles of one face by exact cost (with the groups fixed) under the capacity, which stalls above the budget with chips
    too full to join, then a repair that dissolves the smallest chips through chains of neighbouring chips (repairChips); alternatives are a
    similarity-weighted METIS partition of each face (metisChips) and a serpentine tiling that ignores the cost;
-3. boards: the exact-cost greedy merging whole chips;
-4. simulated annealing over three moves: a tile to a neighbouring chip (capacity respected, the chip it leaves stays connected), a chip to another
-   board, a pattern to another group. A move that lowers the cost is kept; one that raises it by Delta is kept with probability exp(-Delta / T),
+3. boards: the exact-cost greedy merging whole chips, joining only chips that touch on the cube (boardNeighbours: the chip neighbour graph plus
+   the contacts across cube edges), so that every board is one connected region;
+4. simulated annealing over five moves: a tile to a neighbouring chip (capacity respected, the chip it leaves stays connected), a chip to another
+   board it touches (the board it leaves stays connected), a pattern to another group, two neighbouring tiles of different chips swapping chips
+   (the way to change a full chip), and two chips on different boards swapping boards (both boards stay connected). A move that lowers the cost is kept; one that raises it by Delta is kept with probability exp(-Delta / T),
    with the temperature T lowered geometrically.
 
 Defaults are placeholders until the hardware is specified: 32 inputs per chip, one fast-OR output, neighbours in the 4-connected grid of a layer and
-across the two layers (same or adjacent cell). Naming: camelCase everywhere.
+across the two layers (same or adjacent cell). Chips never cross a face (a constraint); boards may, where the faces touch. Naming: camelCase everywhere.
 """
 from dataclasses import dataclass
 import heapq
@@ -64,6 +66,55 @@ def tileNeighbours(tileKeys, crossLayer=True):
     indexPointer = np.zeros(len(tileKeys) + 1, dtype=np.int64)
     indexPointer[1:] = np.cumsum([len(entry) for entry in neighbours])
     return indexPointer, np.array([other for entry in neighbours for other in entry], dtype=np.int64)
+
+
+def crossFaceContacts(tileKeys):
+    """Pairs of tiles of different faces that touch along a cube edge, in both layers and across them: a side face meets TOP along its v = 0 row,
+    where a top tile and a side tile touch when their spans along the edge overlap (the top face is 14 tiles wide, a side 13, so a top edge tile
+    touches one or two side tiles); two neighbouring side faces meet along their end columns (h = 0 or 12), row v by row v. Orientation as in
+    geometryUtils (inferred from the RoI dump)."""
+    position = {key: index for index, key in enumerate(tileKeys)}
+    sides = [face for face in pd.psdSides if face != "TOP"]
+    pairs = []
+    def addPair(first, second):
+        for firstLayer in (0, 1):
+            for secondLayer in (0, 1):
+                a, b = position.get((first[0], firstLayer, first[1])), position.get((second[0], secondLayer, second[1]))
+                if a is not None and b is not None:
+                    pairs.append((a, b))
+    topRows, topColumns = gu.gridShape["TOP"]
+    for side in sides:
+        normal, along = gu.faceNormals[side][:2], gu.alongAxis(side)[:2]
+        sideRows, sideColumns = gu.gridShape[side]
+        for r in range(topRows):
+            for c in range(topColumns):
+                centre = np.array([r - 6.5, c - 6.5])
+                if np.dot(centre, normal) < 6.0:                            # Only the edge row of TOP facing this side.
+                    continue
+                for h in range(sideRows):
+                    if abs(np.dot(centre, along) - (h - 6)) < 1.0 - 1e-9:
+                        addPair(("TOP", r * topColumns + c), (side, h * sideColumns + 0))
+        for other in sides:
+            if other == side:
+                continue
+            if np.allclose(gu.faceNormals[other][:2], along):               # `other` lies across this side's h = 12 edge.
+                otherAlong = gu.alongAxis(other)[:2]
+                otherColumn = sideRows - 1 if np.allclose(otherAlong, normal) else 0
+                for v in range(sideColumns):
+                    addPair((side, (sideRows - 1) * sideColumns + v), (other, otherColumn * sideColumns + v))
+    return pairs
+
+
+def boardNeighbours(tileKeys, neighbours=None):
+    """The neighbour graph used for board contiguity, in compressed sparse row form: the chip neighbour graph (within faces) plus the contacts
+    across cube edges (crossFaceContacts). A board may span faces where they touch."""
+    indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
+    adjacency = [set(neighbourIndices[indexPointer[t]:indexPointer[t + 1]].tolist()) for t in range(len(tileKeys))]
+    for a, b in crossFaceContacts(tileKeys):
+        adjacency[a].add(b); adjacency[b].add(a)
+    pointer = np.zeros(len(tileKeys) + 1, dtype=np.int64)
+    pointer[1:] = np.cumsum([len(entry) for entry in adjacency])
+    return pointer, np.array([other for entry in adjacency for other in sorted(entry)], dtype=np.int64)
 
 
 def minimumChips(tileKeys, capacity=defaultCapacity):
@@ -318,6 +369,47 @@ def metisChips(matrix, cost, tileKeys, chipsPerFace, capacity=defaultCapacity, n
     return chipOf
 
 
+def mergeChipsIntoContiguousBoards(matrix, cost, tileKeys, rowGroup, chipOf, numberOfBoards, boardGraph=None):
+    """Merge whole chips into numberOfBoards boards by exact cost (the pattern groups fixed), joining only groups of chips that touch on the cube
+    (boardNeighbours), so that every board is one connected region. Returns the board of every chip."""
+    pointer, indices = boardNeighbours(tileKeys) if boardGraph is None else boardGraph
+    touches, zero = _chipProfiles(matrix, cost, rowGroup, chipOf)
+    numberOfChips = int(chipOf.max()) + 1
+    clusterTouches = {chip: touches[chipOf == chip].sum(axis=0) > 0 for chip in range(numberOfChips)}
+    clusterZero = {chip: zero[chipOf == chip].sum(axis=0) for chip in range(numberOfChips)}
+    clusterNeighbours = {chip: set() for chip in range(numberOfChips)}
+    for t in range(len(tileKeys)):
+        for other in indices[pointer[t]:pointer[t + 1]]:
+            if chipOf[other] != chipOf[t]:
+                clusterNeighbours[int(chipOf[t])].add(int(chipOf[other]))
+    clusterOf = np.arange(numberOfChips)
+    mergeCost = lambda a, b: float((clusterTouches[a] & ~clusterTouches[b]) @ clusterZero[b] + (clusterTouches[b] & ~clusterTouches[a]) @ clusterZero[a])
+    heap = [(mergeCost(a, b), a, b) for a in clusterNeighbours for b in clusterNeighbours[a] if a < b]
+    heapq.heapify(heap)
+    version = {chip: 0 for chip in range(numberOfChips)}
+    heap = [(added, a, b, 0, 0) for added, a, b in heap]
+    heapq.heapify(heap)
+    remaining = numberOfChips
+    while heap and remaining > numberOfBoards:
+        added, a, b, versionA, versionB = heapq.heappop(heap)
+        if a not in clusterTouches or b not in clusterTouches or version[a] != versionA or version[b] != versionB:
+            continue
+        clusterTouches[a] |= clusterTouches.pop(b)
+        clusterZero[a] += clusterZero.pop(b)
+        for other in clusterNeighbours.pop(b):
+            clusterNeighbours[other].discard(b)
+            if other != a:
+                clusterNeighbours[other].add(a); clusterNeighbours[a].add(other)
+        clusterNeighbours[a].discard(a)
+        clusterOf[clusterOf == b] = a
+        version[a] += 1
+        remaining -= 1
+        for other in clusterNeighbours[a]:
+            first, second = min(a, other), max(a, other)
+            heapq.heappush(heap, (mergeCost(a, other), first, second, version[first], version[second]))
+    return np.unique(clusterOf, return_inverse=True)[1].ravel()
+
+
 def mergeChipsIntoBoards(matrix, cost, rowGroup, chipOf, numberOfBoards, chipLabels=None):
     """Merge whole chips into numberOfBoards boards by exact cost (mergeUtils), the pattern groups kept. Returns the board of every chip."""
     numberOfChips = int(chipOf.max()) + 1
@@ -371,9 +463,79 @@ def _leavesChipConnected(tile, chip, chipOf, chipSize, indexPointer, neighbourIn
 
 
 @njit(cache=True)
+def _chipConnected(chip, chipOf, chipSize, indexPointer, neighbourIndices, visited, stack):
+    """Whether chip `chip`, as currently assigned, is connected in the chip neighbour graph."""
+    if chipSize[chip] <= 1:
+        return True
+    start = -1
+    for t in range(chipOf.size):
+        if chipOf[t] == chip:
+            start = t
+            break
+    visited[:] = False
+    visited[start] = True
+    stack[0] = start
+    top, reached = 1, 1
+    while top > 0:
+        top -= 1
+        current = stack[top]
+        for position in range(indexPointer[current], indexPointer[current + 1]):
+            other = neighbourIndices[position]
+            if not visited[other] and chipOf[other] == chip:
+                visited[other] = True
+                stack[top] = other
+                top += 1
+                reached += 1
+    return reached == chipSize[chip]
+
+
+@njit(cache=True)
+def _localBorders(tile, chipOf, indexPointer, neighbourIndices):
+    """Neighbours of `tile` on another chip."""
+    count = 0
+    for position in range(indexPointer[tile], indexPointer[tile + 1]):
+        if chipOf[neighbourIndices[position]] != chipOf[tile]:
+            count += 1
+    return count
+
+
+@njit(cache=True)
+def _boardConnectedWithout(board, excludedTile, excludedChip, chipOf, boardOf, boardTiles, excludedCount, indexPointer, neighbourIndices,
+                           visited, stack):
+    """Whether board `board` stays connected in the board graph once excludedTile (or every tile of excludedChip) leaves it."""
+    target = boardTiles[board] - excludedCount
+    if target <= 1:
+        return True
+    numberOfTiles = chipOf.size
+    start = -1
+    for t in range(numberOfTiles):
+        if boardOf[chipOf[t]] == board and t != excludedTile and chipOf[t] != excludedChip:
+            start = t
+            break
+    if start < 0:
+        return True
+    visited[:] = False
+    visited[start] = True
+    stack[0] = start
+    top, reached = 1, 1
+    while top > 0:
+        top -= 1
+        current = stack[top]
+        for position in range(indexPointer[current], indexPointer[current + 1]):
+            other = neighbourIndices[position]
+            if not visited[other] and boardOf[chipOf[other]] == board and other != excludedTile and chipOf[other] != excludedChip:
+                visited[other] = True
+                stack[top] = other
+                top += 1
+                reached += 1
+    return reached == target
+
+
+@njit(cache=True)
 def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patternLabel, boardFace, chipFace,
             indexPointer, neighbourIndices, numberOfGroups, numberOfBoards, capacity, steps, startTemperature, endTemperature,
-            moveShares, seed, traceEvery, proposalDeltas, chipBudget, chipPenalty, borderPenalty):
+            moveShares, seed, traceEvery, proposalDeltas, chipBudget, chipPenalty, borderPenalty, contiguousBoards,
+            boardIndexPointer, boardNeighbourIndices):
     """The annealing loop. With proposalDeltas of non-zero length, the cost change of every proposal is recorded there and nothing is accepted
     (a probe of the move sizes at the start state)."""
     np.random.seed(seed)
@@ -419,11 +581,16 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
     stack = np.zeros(numberOfTiles, dtype=np.int64)
     traceLength = steps // traceEvery + 1
     trace = np.zeros((traceLength, 4))
-    accepted = np.zeros(3, dtype=np.int64)
-    proposed = np.zeros(3, dtype=np.int64)
+    accepted = np.zeros(5, dtype=np.int64)
+    proposed = np.zeros(5, dtype=np.int64)
     cooling = (endTemperature / startTemperature) ** (1.0 / max(steps - 1, 1))
     temperature = startTemperature
     chipTile = np.zeros(numberOfGroups, dtype=np.int64)
+    boardTiles = np.zeros(numberOfBoards, dtype=np.int64)                  # Tiles per board, for the contiguity checks.
+    for t in range(numberOfTiles):
+        boardTiles[boardOf[chipOf[t]]] += 1
+    boardVisited = np.zeros(numberOfTiles, dtype=np.bool_)
+    boardStack = np.zeros(numberOfTiles, dtype=np.int64)
     chipZero = np.zeros(numberOfGroups)
     for step in range(steps):
         draw = np.random.random()
@@ -432,8 +599,12 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
             degree = indexPointer[t + 1] - indexPointer[t]
             u = neighbourIndices[indexPointer[t] + np.random.randint(degree)] if degree > 0 else t
             fromChip, toChip = chipOf[t], chipOf[u]
-            if fromChip != toChip and chipSize[toChip] < capacity and _leavesChipConnected(t, fromChip, chipOf, chipSize, indexPointer,
-                                                                                            neighbourIndices, visited, stack):
+            allowed = fromChip != toChip and chipSize[toChip] < capacity and _leavesChipConnected(t, fromChip, chipOf, chipSize, indexPointer,
+                                                                                                   neighbourIndices, visited, stack)
+            if allowed and contiguousBoards and boardOf[fromChip] != boardOf[toChip]:
+                allowed = _boardConnectedWithout(boardOf[fromChip], t, -1, chipOf, boardOf, boardTiles, 1, boardIndexPointer,
+                                                 boardNeighbourIndices, boardVisited, boardStack)
+            if allowed:
                 proposed[0] += 1
                 fromBoard, toBoard = boardOf[fromChip], boardOf[toChip]
                 delta = -chipPenalty if (chipSize[fromChip] == 1 and liveChips > chipBudget) else 0.0
@@ -461,6 +632,8 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
                     chipSize[fromChip] -= 1
                     chipSize[toChip] += 1
                     if fromBoard != toBoard:
+                        boardTiles[fromBoard] -= 1
+                        boardTiles[toBoard] += 1
                         for k in range(numberOfGroups):
                             blockCount[k, fromBoard] -= groupTile[k, t]; blockZero[k, fromBoard] -= groupTileZero[k, t]
                             blockCount[k, toBoard] += groupTile[k, t]; blockZero[k, toBoard] += groupTileZero[k, t]
@@ -474,7 +647,20 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
             toBoard = np.random.randint(numberOfBoards - 1) if numberOfBoards > 1 else 0
             if toBoard >= fromBoard:
                 toBoard += 1
-            if (chipSize[chip] > 0 and numberOfBoards > 1 and (boardFace[toBoard] < 0 or boardFace[toBoard] == chipFace[chip])):
+            allowed = chipSize[chip] > 0 and numberOfBoards > 1 and (boardFace[toBoard] < 0 or boardFace[toBoard] == chipFace[chip])
+            if allowed and contiguousBoards:
+                touchesTarget = boardTiles[toBoard] == 0
+                for t in range(numberOfTiles):
+                    if touchesTarget:
+                        break
+                    if chipOf[t] == chip:
+                        for position in range(boardIndexPointer[t], boardIndexPointer[t + 1]):
+                            if boardOf[chipOf[boardNeighbourIndices[position]]] == toBoard:
+                                touchesTarget = True
+                                break
+                allowed = touchesTarget and _boardConnectedWithout(fromBoard, -1, chip, chipOf, boardOf, boardTiles, chipSize[chip],
+                                                                   boardIndexPointer, boardNeighbourIndices, boardVisited, boardStack)
+            if allowed:
                 proposed[1] += 1
                 chipTile[:] = 0
                 chipZero[:] = 0.0
@@ -494,6 +680,8 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
                 elif delta <= 0.0 or np.random.random() < np.exp(-delta / temperature):
                     accepted[1] += 1
                     boardOf[chip] = toBoard
+                    boardTiles[fromBoard] -= chipSize[chip]
+                    boardTiles[toBoard] += chipSize[chip]
                     for k in range(numberOfGroups):
                         blockCount[k, fromBoard] -= chipTile[k]; blockZero[k, fromBoard] -= chipZero[k]
                         blockCount[k, toBoard] += chipTile[k]; blockZero[k, toBoard] += chipZero[k]
@@ -503,7 +691,7 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
                                 patternBoard[i, fromBoard] -= roi[i, t]; patternBoardZero[i, fromBoard] -= zeroCost[i, t]
                                 patternBoard[i, toBoard] += roi[i, t]; patternBoardZero[i, toBoard] += zeroCost[i, t]
                     total += delta
-        else:                                                               # A pattern to another group.
+        elif draw < moveShares[0] + moveShares[1] + moveShares[2]:          # A pattern to another group.
             i = np.random.randint(numberOfPatterns)
             fromGroup = groupOf[i]
             toGroup = np.random.randint(numberOfGroups - 1) if numberOfGroups > 1 else 0
@@ -530,6 +718,108 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
                         groupTile[fromGroup, t] -= roi[i, t]; groupTileZero[fromGroup, t] -= zeroCost[i, t]
                         groupTile[toGroup, t] += roi[i, t]; groupTileZero[toGroup, t] += zeroCost[i, t]
                     total += delta
+        elif draw < moveShares[0] + moveShares[1] + moveShares[2] + moveShares[3]:   # Two neighbouring tiles of different chips swap chips.
+            t = np.random.randint(numberOfTiles)
+            degree = indexPointer[t + 1] - indexPointer[t]
+            u = neighbourIndices[indexPointer[t] + np.random.randint(degree)] if degree > 0 else t
+            firstChip, secondChip = chipOf[t], chipOf[u]
+            if firstChip != secondChip:
+                firstBoard, secondBoard = boardOf[firstChip], boardOf[secondChip]
+                bordersBefore = _localBorders(t, chipOf, indexPointer, neighbourIndices) + _localBorders(u, chipOf, indexPointer, neighbourIndices)
+                chipOf[t], chipOf[u] = secondChip, firstChip                # Tentative swap: check shapes, then undo before the decision.
+                allowed = (_chipConnected(firstChip, chipOf, chipSize, indexPointer, neighbourIndices, visited, stack)
+                           and _chipConnected(secondChip, chipOf, chipSize, indexPointer, neighbourIndices, visited, stack))
+                if allowed and contiguousBoards and firstBoard != secondBoard:
+                    allowed = (_boardConnectedWithout(firstBoard, -1, -1, chipOf, boardOf, boardTiles, 0, boardIndexPointer, boardNeighbourIndices,
+                                                      boardVisited, boardStack)
+                               and _boardConnectedWithout(secondBoard, -1, -1, chipOf, boardOf, boardTiles, 0, boardIndexPointer,
+                                                          boardNeighbourIndices, boardVisited, boardStack))
+                bordersAfter = _localBorders(t, chipOf, indexPointer, neighbourIndices) + _localBorders(u, chipOf, indexPointer, neighbourIndices)
+                chipOf[t], chipOf[u] = firstChip, secondChip
+                if allowed:
+                    proposed[3] += 1
+                    delta = borderPenalty * (bordersAfter - bordersBefore)
+                    if firstBoard != secondBoard:
+                        for k in range(numberOfGroups):
+                            change = groupTile[k, u] - groupTile[k, t]
+                            zeroChange = groupTileZero[k, u] - groupTileZero[k, t]
+                            delta += (_blockCost(blockCount[k, firstBoard] + change, blockZero[k, firstBoard] + zeroChange)
+                                      - _blockCost(blockCount[k, firstBoard], blockZero[k, firstBoard])
+                                      + _blockCost(blockCount[k, secondBoard] - change, blockZero[k, secondBoard] - zeroChange)
+                                      - _blockCost(blockCount[k, secondBoard], blockZero[k, secondBoard]))
+                    if probing:
+                        if probed < proposalDeltas.size:
+                            proposalDeltas[probed] = delta
+                            probed += 1
+                    elif delta <= 0.0 or np.random.random() < np.exp(-delta / temperature):
+                        accepted[3] += 1
+                        chipOf[t], chipOf[u] = secondChip, firstChip
+                        if firstBoard != secondBoard:
+                            for k in range(numberOfGroups):
+                                change = groupTile[k, u] - groupTile[k, t]
+                                zeroChange = groupTileZero[k, u] - groupTileZero[k, t]
+                                blockCount[k, firstBoard] += change; blockZero[k, firstBoard] += zeroChange
+                                blockCount[k, secondBoard] -= change; blockZero[k, secondBoard] -= zeroChange
+                            for i in range(numberOfPatterns):
+                                patternBoard[i, firstBoard] += roi[i, u] - roi[i, t]; patternBoardZero[i, firstBoard] += zeroCost[i, u] - zeroCost[i, t]
+                                patternBoard[i, secondBoard] += roi[i, t] - roi[i, u]; patternBoardZero[i, secondBoard] += zeroCost[i, t] - zeroCost[i, u]
+                        total += delta
+        else:                                                               # Two chips on different boards swap boards.
+            firstChip = np.random.randint(numberOfChips)
+            secondChip = np.random.randint(numberOfChips)
+            firstBoard, secondBoard = boardOf[firstChip], boardOf[secondChip]
+            if chipSize[firstChip] > 0 and chipSize[secondChip] > 0 and firstBoard != secondBoard and \
+                    (boardFace[secondBoard] < 0 or boardFace[secondBoard] == chipFace[firstChip]) and \
+                    (boardFace[firstBoard] < 0 or boardFace[firstBoard] == chipFace[secondChip]):
+                allowed = True
+                if contiguousBoards:
+                    boardOf[firstChip], boardOf[secondChip] = secondBoard, firstBoard
+                    sizeChange = chipSize[secondChip] - chipSize[firstChip]
+                    boardTiles[firstBoard] += sizeChange
+                    boardTiles[secondBoard] -= sizeChange
+                    allowed = (_boardConnectedWithout(firstBoard, -1, -1, chipOf, boardOf, boardTiles, 0, boardIndexPointer, boardNeighbourIndices,
+                                                      boardVisited, boardStack)
+                               and _boardConnectedWithout(secondBoard, -1, -1, chipOf, boardOf, boardTiles, 0, boardIndexPointer,
+                                                          boardNeighbourIndices, boardVisited, boardStack))
+                    boardOf[firstChip], boardOf[secondChip] = firstBoard, secondBoard
+                    boardTiles[firstBoard] -= sizeChange
+                    boardTiles[secondBoard] += sizeChange
+                if allowed:
+                    proposed[4] += 1
+                    chipTile[:] = 0
+                    chipZero[:] = 0.0
+                    for t in range(numberOfTiles):                          # chipTile, chipZero: second chip minus first chip, per group.
+                        if chipOf[t] == firstChip or chipOf[t] == secondChip:
+                            sign = 1 if chipOf[t] == secondChip else -1
+                            for k in range(numberOfGroups):
+                                chipTile[k] += sign * groupTile[k, t]
+                                chipZero[k] += sign * groupTileZero[k, t]
+                    delta = 0.0
+                    for k in range(numberOfGroups):
+                        delta += (_blockCost(blockCount[k, firstBoard] + chipTile[k], blockZero[k, firstBoard] + chipZero[k])
+                                  - _blockCost(blockCount[k, firstBoard], blockZero[k, firstBoard])
+                                  + _blockCost(blockCount[k, secondBoard] - chipTile[k], blockZero[k, secondBoard] - chipZero[k])
+                                  - _blockCost(blockCount[k, secondBoard], blockZero[k, secondBoard]))
+                    if probing:
+                        if probed < proposalDeltas.size:
+                            proposalDeltas[probed] = delta
+                            probed += 1
+                    elif delta <= 0.0 or np.random.random() < np.exp(-delta / temperature):
+                        accepted[4] += 1
+                        boardOf[firstChip], boardOf[secondChip] = secondBoard, firstBoard
+                        sizeChange = chipSize[secondChip] - chipSize[firstChip]
+                        boardTiles[firstBoard] += sizeChange
+                        boardTiles[secondBoard] -= sizeChange
+                        for k in range(numberOfGroups):
+                            blockCount[k, firstBoard] += chipTile[k]; blockZero[k, firstBoard] += chipZero[k]
+                            blockCount[k, secondBoard] -= chipTile[k]; blockZero[k, secondBoard] -= chipZero[k]
+                        for t in range(numberOfTiles):
+                            if chipOf[t] == firstChip or chipOf[t] == secondChip:
+                                sign = 1 if chipOf[t] == secondChip else -1
+                                for i in range(numberOfPatterns):
+                                    patternBoard[i, firstBoard] += sign * roi[i, t]; patternBoardZero[i, firstBoard] += sign * zeroCost[i, t]
+                                    patternBoard[i, secondBoard] -= sign * roi[i, t]; patternBoardZero[i, secondBoard] -= sign * zeroCost[i, t]
+                        total += delta
         if total < best - 1e-12:
             best = total
             bestGroupOf[:] = groupOf
@@ -566,9 +856,15 @@ def chipBorderLength(layout, tileKeys, neighbours=None):
     return int(sum(1 for t in range(len(tileKeys)) for other in neighbourIndices[indexPointer[t]:indexPointer[t + 1]] if other > t and owner[other] != owner[t]))
 
 
-def checkLayout(layout, tileKeys, capacity=defaultCapacity, neighbours=None):
-    """Raises AssertionError unless every chip is on one face, holds at most `capacity` tiles and is connected in the neighbour graph."""
+def checkLayout(layout, tileKeys, capacity=defaultCapacity, neighbours=None, contiguousBoards=False):
+    """Raises AssertionError unless every chip is on one face, holds at most `capacity` tiles and is connected in the neighbour graph, and (with
+    contiguousBoards) every board is connected on the cube."""
     indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
+    if contiguousBoards:
+        pointer, indices = boardNeighbours(tileKeys, (indexPointer, neighbourIndices))
+        tileBoard = layout.boardOfChip[layout.chipOf]
+        for board in np.unique(tileBoard):
+            assert _isConnected(np.flatnonzero(tileBoard == board), pointer, indices), f"board {board}: not connected on the cube"
     faces = np.array([key[0] for key in tileKeys])
     for chip in np.unique(layout.chipOf):
         members = np.flatnonzero(layout.chipOf == chip)
@@ -585,8 +881,9 @@ def checkLayout(layout, tileKeys, capacity=defaultCapacity, neighbours=None):
 
 
 def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, capacity=defaultCapacity, steps=2_000_000, seed=0,
-                 moveShares=(0.5, 0.2, 0.3), temperatures=None, startAcceptance=0.1, endTemperatureRatio=1e-3, chipBudget=None,
-                 chipPenalty=None, borderPenalty=0.0, patternLabels=None, groupLabels=None, chipFaceBoards=None, neighbours=None):
+                 moveShares=(0.35, 0.15, 0.2, 0.2, 0.1), temperatures=None, startAcceptance=0.1, endTemperatureRatio=1e-3, chipBudget=None,
+                 chipPenalty=None, borderPenalty=0.0, contiguousBoards=False, patternLabels=None, groupLabels=None, chipFaceBoards=None,
+                 neighbours=None, boardGraph=None):
     """Simulated annealing from `start` (a ChipLayout). Unless `temperatures` = (start, end) is given, the start temperature is set from the cost
     changes of moves proposed at the start state (none accepted), for each move type separately: a median uphill move of the finest type (the
     tile moves, by orders of magnitude) is kept with probability startAcceptance, so uphill chip and pattern moves are almost never kept. A random walk is
@@ -595,10 +892,14 @@ def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, 
     default the cost of the whole start map, so that emptying a chip always pays); moving the last tile out of a chip removes it. borderPenalty is
     added per chip border (a pair of neighbouring tiles on different chips): the veto cost does not depend on the shape of a chip within its board,
     so a penalty much smaller than a tile move only decides between otherwise equal moves and, once the temperature is below it, makes the chips
-    compact. The returned cost includes both penalties; mergeUtils.computeMaskCost gives the veto cost alone.
+    compact. With contiguousBoards every board stays one connected region on the cube (boardNeighbours): a move that would split a board, or
+    put a chip on a board it does not touch, is not proposed; the start must already be contiguous (mergeChipsIntoContiguousBoards). The returned
+    cost includes both penalties; mergeUtils.computeMaskCost gives the veto cost alone.
     patternLabels/groupLabels keep patterns in groups of their own label (for example one group per FIT face); chipFaceBoards, a face per board,
     keeps chips on boards of their own face. Returns (best ChipLayout, its cost, a dict with the trace and the acceptance per move type)."""
     indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
+    boardGraph = (boardNeighbours(tileKeys, (indexPointer, neighbourIndices)) if contiguousBoards else (np.zeros(1, dtype=np.int64),
+                  np.zeros(0, dtype=np.int64))) if boardGraph is None else boardGraph
     roi = matrix.astype(np.int64)
     zeroCost = np.asarray(cost, dtype=float) * ~matrix
     faces = np.array([key[0] for key in tileKeys])
@@ -619,14 +920,15 @@ def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, 
     noDeltas = np.zeros(0)
     if temperatures is None:
         medianUphill = []
-        for moveType in range(3):                                           # The three moves differ in scale by orders of magnitude.
+        for moveType in range(shares.size):                                 # The move types differ in scale by orders of magnitude.
             if shares[moveType] == 0:
                 continue
-            onlyThisMove = np.zeros(3); onlyThisMove[moveType] = 1.0
+            onlyThisMove = np.zeros(shares.size); onlyThisMove[moveType] = 1.0
             deltas = np.full(20000, np.nan)
             _anneal(roi, zeroCost, start.rowGroup.copy(), start.chipOf.copy(), start.boardOfChip.copy(), chipSize.copy(), groupLabel,
                     patternLabel, boardFace, chipFace, indexPointer, neighbourIndices, numberOfGroups, numberOfBoards, capacity, 60000, 1.0, 1.0,
-                    onlyThisMove, seed + 1_000_003 + moveType, 60000, deltas, numberOfChips, 0.0, 0.0)
+                    onlyThisMove, seed + 1_000_003 + moveType, 60000, deltas, numberOfChips, 0.0, 0.0, contiguousBoards, boardGraph[0],
+                    boardGraph[1])
             uphill = deltas[np.isfinite(deltas) & (deltas > 1e-12)]
             if uphill.size:
                 medianUphill.append(float(np.median(uphill)))
@@ -635,7 +937,8 @@ def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, 
     bestGroupOf, bestChipOf, bestBoardOf, best, trace, accepted, proposed = _anneal(
         roi, zeroCost, start.rowGroup.copy(), start.chipOf.copy(), start.boardOfChip.copy(), chipSize, groupLabel, patternLabel, boardFace,
         chipFace, indexPointer, neighbourIndices, numberOfGroups, numberOfBoards, capacity, steps, temperatures[0], temperatures[1], shares, seed,
-        max(steps // 400, 1), noDeltas, numberOfChips if chipBudget is None else chipBudget, chipPenalty, borderPenalty)
+        max(steps // 400, 1), noDeltas, numberOfChips if chipBudget is None else chipBudget, chipPenalty, borderPenalty, contiguousBoards,
+        boardGraph[0], boardGraph[1])
     _, compactChips = np.unique(bestChipOf, return_inverse=True)
     usedChips = np.unique(bestChipOf)
     layout = ChipLayout(bestGroupOf, compactChips.ravel(), bestBoardOf[usedChips])
@@ -644,18 +947,20 @@ def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, 
 
 def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capacity=defaultCapacity, chipsPerFace=None, groupSeeds=("greedy", "wardJaccard"),
                    chipSeeds=("repairedMerge", "metis", "serpentine"), annealingSeeds=(0, 1, 2), steps=20_000_000, relativeBorderPenalty=1e-4,
-                   groupLabels=None, chipFaceBoards=None):
+                   contiguousBoards=True, groupLabels=None, chipFaceBoards=None):
     """The whole search: for every pattern-group seed (groups-first exact-cost greedy, or the Ward-scaled Jaccard merge) and chip seed
     ("repairedMerge": neighbouring tiles merged by exact cost, then repaired to the budget; "merge": the same without repair, which usually ends
     above the budget; "metis": a similarity-weighted graph partition of each face; "serpentine": a contiguous tiling that ignores the cost), boards
     by the exact-cost greedy, then simulated annealing from several random seeds. The chip border penalty is relativeBorderPenalty times sum C M
-    per border: at 1e-4 it halves the chip borders on the HERD showcase for about 0.5% of veto cost (compact chips instead of winding ones). chipsPerFace is the
+    per border: at 1e-4 it halves the chip borders on the HERD showcase for about 0.5% of veto cost (compact chips instead of winding ones).
+    With contiguousBoards (the default) every board is one connected region on the cube, for about 3% of veto cost on the showcase. chipsPerFace is the
     chip budget per face (default: the minimum). groupLabels, one label per pattern (for example its FIT face), keeps each group to one label, the
     groups being named by the labels in order (numberOfGroups must equal the number of labels). Returns (best ChipLayout within the budget,
     [dict per candidate: seeds, chips, cost before and after annealing, run time])."""
     import time
     import jaccardMerge as jm
     neighbours = tileNeighbours(tileKeys)
+    boardGraph = boardNeighbours(tileKeys, neighbours)
     chipsPerFace = minimumChips(tileKeys, capacity) if chipsPerFace is None else chipsPerFace
     chipBudget = sum(chipsPerFace.values())
     reference = float((cost * matrix).sum())
@@ -687,15 +992,17 @@ def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capac
                 chipOf = mergeTilesIntoChips(matrix, cost, tileKeys, rowGroup, chipsPerFace, capacity, neighbours)[0]
                 if chipSeed == "repairedMerge":
                     chipOf = repairChips(matrix, cost, tileKeys, rowGroup, chipOf, chipsPerFace, capacity, neighbours)[0]
-            boardOfChip = mergeChipsIntoBoards(matrix, cost, rowGroup, chipOf, numberOfBoards)
+            boardOfChip = (mergeChipsIntoContiguousBoards(matrix, cost, tileKeys, rowGroup, chipOf, numberOfBoards, boardGraph) if contiguousBoards
+                           else mergeChipsIntoBoards(matrix, cost, rowGroup, chipOf, numberOfBoards))
             start = ChipLayout(rowGroup, chipOf, boardOfChip)
             for annealingSeed in annealingSeeds:
                 began = time.time()
                 layout, _, info = annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, capacity, steps, annealingSeed,
                                                chipBudget=chipBudget, borderPenalty=relativeBorderPenalty * reference,
+                                               contiguousBoards=contiguousBoards, boardGraph=boardGraph,
                                                patternLabels=groupLabels, groupLabels=labelOfGroup,
                                                chipFaceBoards=chipFaceBoards, neighbours=neighbours)
-                checkLayout(layout, tileKeys, capacity, neighbours)
+                checkLayout(layout, tileKeys, capacity, neighbours, contiguousBoards)
                 result = dict(groupSeed=groupSeed, chipSeed=chipSeed, annealingSeed=annealingSeed, startChips=start.numberOfChips,
                               chips=layout.numberOfChips, startCost=relative(start), cost=relative(layout),
                               chipBorders=chipBorderLength(layout, tileKeys, neighbours), seconds=time.time() - began)
