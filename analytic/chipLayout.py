@@ -373,7 +373,7 @@ def _leavesChipConnected(tile, chip, chipOf, chipSize, indexPointer, neighbourIn
 @njit(cache=True)
 def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patternLabel, boardFace, chipFace,
             indexPointer, neighbourIndices, numberOfGroups, numberOfBoards, capacity, steps, startTemperature, endTemperature,
-            moveShares, seed, traceEvery, proposalDeltas, chipBudget, chipPenalty):
+            moveShares, seed, traceEvery, proposalDeltas, chipBudget, chipPenalty, borderPenalty):
     """The annealing loop. With proposalDeltas of non-zero length, the cost change of every proposal is recorded there and nothing is accepted
     (a probe of the move sizes at the start state)."""
     np.random.seed(seed)
@@ -405,6 +405,11 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
         if chipSize[c] > 0:
             liveChips += 1
     total = chipPenalty * max(liveChips - chipBudget, 0)                   # Chips above the budget, if the start has any.
+    for t in range(numberOfTiles):                                          # Chip borders: neighbouring tiles of different chips (each pair once).
+        for position in range(indexPointer[t], indexPointer[t + 1]):
+            other = neighbourIndices[position]
+            if other > t and chipOf[other] != chipOf[t]:
+                total += borderPenalty
     for k in range(numberOfGroups):
         for b in range(numberOfBoards):
             total += _blockCost(blockCount[k, b], blockZero[k, b])
@@ -432,6 +437,13 @@ def _anneal(roi, zeroCost, groupOf, chipOf, boardOf, chipSize, groupLabel, patte
                 proposed[0] += 1
                 fromBoard, toBoard = boardOf[fromChip], boardOf[toChip]
                 delta = -chipPenalty if (chipSize[fromChip] == 1 and liveChips > chipBudget) else 0.0
+                if borderPenalty > 0.0:                                     # Edges to the old chip become borders, edges to the new one stop being.
+                    for position in range(indexPointer[t], indexPointer[t + 1]):
+                        other = neighbourIndices[position]
+                        if chipOf[other] == fromChip:
+                            delta += borderPenalty
+                        elif chipOf[other] == toChip:
+                            delta -= borderPenalty
                 if fromBoard != toBoard:
                     for k in range(numberOfGroups):
                         a, z = groupTile[k, t], groupTileZero[k, t]
@@ -547,6 +559,13 @@ class ChipLayout:
         return int(np.unique(self.chipOf).size)
 
 
+def chipBorderLength(layout, tileKeys, neighbours=None):
+    """The number of chip borders: pairs of neighbouring tiles (in the neighbour graph) that belong to different chips."""
+    indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
+    owner = layout.chipOf
+    return int(sum(1 for t in range(len(tileKeys)) for other in neighbourIndices[indexPointer[t]:indexPointer[t + 1]] if other > t and owner[other] != owner[t]))
+
+
 def checkLayout(layout, tileKeys, capacity=defaultCapacity, neighbours=None):
     """Raises AssertionError unless every chip is on one face, holds at most `capacity` tiles and is connected in the neighbour graph."""
     indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
@@ -567,13 +586,16 @@ def checkLayout(layout, tileKeys, capacity=defaultCapacity, neighbours=None):
 
 def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, capacity=defaultCapacity, steps=2_000_000, seed=0,
                  moveShares=(0.5, 0.2, 0.3), temperatures=None, startAcceptance=0.1, endTemperatureRatio=1e-3, chipBudget=None,
-                 chipPenalty=None, patternLabels=None, groupLabels=None, chipFaceBoards=None, neighbours=None):
+                 chipPenalty=None, borderPenalty=0.0, patternLabels=None, groupLabels=None, chipFaceBoards=None, neighbours=None):
     """Simulated annealing from `start` (a ChipLayout). Unless `temperatures` = (start, end) is given, the start temperature is set from the cost
     changes of moves proposed at the start state (none accepted), for each move type separately: a median uphill move of the finest type (the
     tile moves, by orders of magnitude) is kept with probability startAcceptance, so uphill chip and pattern moves are almost never kept. A random walk is
     not used for this: under union routing it drifts onto the plateau where every group is vetoed by every board, where most moves cost nothing.
     The end temperature is endTemperatureRatio times the start one. A start with more chips than chipBudget pays chipPenalty per extra chip (by
-    default the cost of the whole start map, so that emptying a chip always pays); moving the last tile out of a chip removes it.
+    default the cost of the whole start map, so that emptying a chip always pays); moving the last tile out of a chip removes it. borderPenalty is
+    added per chip border (a pair of neighbouring tiles on different chips): the veto cost does not depend on the shape of a chip within its board,
+    so a penalty much smaller than a tile move only decides between otherwise equal moves and, once the temperature is below it, makes the chips
+    compact. The returned cost includes both penalties; mergeUtils.computeMaskCost gives the veto cost alone.
     patternLabels/groupLabels keep patterns in groups of their own label (for example one group per FIT face); chipFaceBoards, a face per board,
     keeps chips on boards of their own face. Returns (best ChipLayout, its cost, a dict with the trace and the acceptance per move type)."""
     indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
@@ -604,7 +626,7 @@ def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, 
             deltas = np.full(20000, np.nan)
             _anneal(roi, zeroCost, start.rowGroup.copy(), start.chipOf.copy(), start.boardOfChip.copy(), chipSize.copy(), groupLabel,
                     patternLabel, boardFace, chipFace, indexPointer, neighbourIndices, numberOfGroups, numberOfBoards, capacity, 60000, 1.0, 1.0,
-                    onlyThisMove, seed + 1_000_003 + moveType, 60000, deltas, numberOfChips, 0.0)
+                    onlyThisMove, seed + 1_000_003 + moveType, 60000, deltas, numberOfChips, 0.0, 0.0)
             uphill = deltas[np.isfinite(deltas) & (deltas > 1e-12)]
             if uphill.size:
                 medianUphill.append(float(np.median(uphill)))
@@ -613,7 +635,7 @@ def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, 
     bestGroupOf, bestChipOf, bestBoardOf, best, trace, accepted, proposed = _anneal(
         roi, zeroCost, start.rowGroup.copy(), start.chipOf.copy(), start.boardOfChip.copy(), chipSize, groupLabel, patternLabel, boardFace,
         chipFace, indexPointer, neighbourIndices, numberOfGroups, numberOfBoards, capacity, steps, temperatures[0], temperatures[1], shares, seed,
-        max(steps // 400, 1), noDeltas, numberOfChips if chipBudget is None else chipBudget, chipPenalty)
+        max(steps // 400, 1), noDeltas, numberOfChips if chipBudget is None else chipBudget, chipPenalty, borderPenalty)
     _, compactChips = np.unique(bestChipOf, return_inverse=True)
     usedChips = np.unique(bestChipOf)
     layout = ChipLayout(bestGroupOf, compactChips.ravel(), bestBoardOf[usedChips])
@@ -621,11 +643,13 @@ def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, 
 
 
 def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capacity=defaultCapacity, chipsPerFace=None, groupSeeds=("greedy", "wardJaccard"),
-                   chipSeeds=("repairedMerge", "metis", "serpentine"), annealingSeeds=(0, 1, 2), steps=2_000_000, groupLabels=None, chipFaceBoards=None):
+                   chipSeeds=("repairedMerge", "metis", "serpentine"), annealingSeeds=(0, 1, 2), steps=20_000_000, relativeBorderPenalty=1e-4,
+                   groupLabels=None, chipFaceBoards=None):
     """The whole search: for every pattern-group seed (groups-first exact-cost greedy, or the Ward-scaled Jaccard merge) and chip seed
     ("repairedMerge": neighbouring tiles merged by exact cost, then repaired to the budget; "merge": the same without repair, which usually ends
     above the budget; "metis": a similarity-weighted graph partition of each face; "serpentine": a contiguous tiling that ignores the cost), boards
-    by the exact-cost greedy, then simulated annealing from several random seeds. chipsPerFace is the
+    by the exact-cost greedy, then simulated annealing from several random seeds. The chip border penalty is relativeBorderPenalty times sum C M
+    per border: at 1e-4 it halves the chip borders on the HERD showcase for about 0.5% of veto cost (compact chips instead of winding ones). chipsPerFace is the
     chip budget per face (default: the minimum). groupLabels, one label per pattern (for example its FIT face), keeps each group to one label, the
     groups being named by the labels in order (numberOfGroups must equal the number of labels). Returns (best ChipLayout within the budget,
     [dict per candidate: seeds, chips, cost before and after annealing, run time])."""
@@ -668,11 +692,13 @@ def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capac
             for annealingSeed in annealingSeeds:
                 began = time.time()
                 layout, _, info = annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, capacity, steps, annealingSeed,
-                                               chipBudget=chipBudget, patternLabels=groupLabels, groupLabels=labelOfGroup,
+                                               chipBudget=chipBudget, borderPenalty=relativeBorderPenalty * reference,
+                                               patternLabels=groupLabels, groupLabels=labelOfGroup,
                                                chipFaceBoards=chipFaceBoards, neighbours=neighbours)
                 checkLayout(layout, tileKeys, capacity, neighbours)
                 result = dict(groupSeed=groupSeed, chipSeed=chipSeed, annealingSeed=annealingSeed, startChips=start.numberOfChips,
-                              chips=layout.numberOfChips, startCost=relative(start), cost=relative(layout), seconds=time.time() - began)
+                              chips=layout.numberOfChips, startCost=relative(start), cost=relative(layout),
+                              chipBorders=chipBorderLength(layout, tileKeys, neighbours), seconds=time.time() - began)
                 candidates.append(result)
                 if layout.numberOfChips <= chipBudget and result["cost"] < bestCost:
                     best, bestCost = layout, result["cost"]
