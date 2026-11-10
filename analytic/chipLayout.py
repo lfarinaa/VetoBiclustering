@@ -12,9 +12,9 @@ the channel of a tile being the board of its chip.
 
 The search merges up to a point and then anneals:
 1. pattern groups: the groups-first exact-cost greedy or the Ward-scaled Jaccard merge, with the tiles unmerged;
-2. chips: either merging neighbouring tiles of one face by exact cost (with the groups fixed) under the capacity, down to the chip budget, or a
-   serpentine tiling of each face cut into contiguous chunks (a fallback when merging fragments, that is, stalls above the budget with chips too
-   full to join);
+2. chips: merging neighbouring tiles of one face by exact cost (with the groups fixed) under the capacity, which stalls above the budget with chips
+   too full to join, then a repair that dissolves the smallest chips through chains of neighbouring chips (repairChips); alternatives are a
+   similarity-weighted METIS partition of each face (metisChips) and a serpentine tiling that ignores the cost;
 3. boards: the exact-cost greedy merging whole chips;
 4. simulated annealing over three moves: a tile to a neighbouring chip (capacity respected, the chip it leaves stays connected), a chip to another
    board, a pattern to another group. A move that lowers the cost is kept; one that raises it by Delta is kept with probability exp(-Delta / T),
@@ -145,6 +145,177 @@ def mergeTilesIntoChips(matrix, cost, tileKeys, rowGroup, chipsPerFace, capacity
                 heapq.heappush(heap, (mergeCost(a, other), clusterSize[a] + clusterSize[other], min(a, other), max(a, other)))
     _, chipOf = np.unique(clusterOf, return_inverse=True)
     return chipOf.ravel(), dict(remaining)
+
+
+def _chipProfiles(matrix, cost, rowGroup, chipOf):
+    """Per chip, the groups whose RoIs it touches and its false-veto cost per group (the chip treated as a channel)."""
+    numberOfGroups = int(rowGroup.max()) + 1
+    groupOneHot = mu._oneHot(rowGroup, numberOfGroups)
+    touches = (groupOneHot.T @ matrix).T                                    # [t, k]: patterns of group k with tile t in their RoI.
+    zero = (groupOneHot.T @ (cost * ~matrix)).T                             # [t, k]: false-veto cost of tile t for group k.
+    return touches, zero
+
+
+def _isConnected(members, indexPointer, neighbourIndices):
+    memberSet = set(int(member) for member in members)
+    if not memberSet:
+        return True
+    first = next(iter(memberSet))
+    seen, frontier = {first}, [first]
+    while frontier:
+        current = frontier.pop()
+        for other in neighbourIndices[indexPointer[current]:indexPointer[current + 1]]:
+            other = int(other)
+            if other in memberSet and other not in seen:
+                seen.add(other); frontier.append(other)
+    return len(seen) == len(memberSet)
+
+
+def repairChips(matrix, cost, tileKeys, rowGroup, chipOf, chipsPerFace, capacity=defaultCapacity, neighbours=None, maximumPathLength=6):
+    """Bring a chip layout within the capacity and the budget chipsPerFace, keeping every chip connected. Oversized chips first shed boundary tiles,
+    then the smallest chips of a face above its budget are dissolved. A tile goes to a neighbouring chip with room; when every neighbouring chip is
+    full, room is made along a chain of neighbouring chips (each passing one boundary tile to the next, the last one having room), the shortest chain
+    first, as an augmenting path in matching. Among the possible destinations the one whose groups the tile adds least false-veto cost to is
+    chosen (the chip treated as a channel). A chip in several disconnected pieces is first split into one chip per piece. Returns (chipOf,
+    {face: chips}); a face is left above its budget if no chain is found."""
+    indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
+    chipOf = np.unique(np.asarray(chipOf), return_inverse=True)[1].ravel().copy()
+    faces = np.array([key[0] for key in tileKeys])
+    nextChip = int(chipOf.max()) + 1
+    for chip in np.unique(chipOf):                                          # A chip in several pieces becomes one chip per piece.
+        remaining = set(np.flatnonzero(chipOf == chip).tolist())
+        first = True
+        while remaining:
+            seed = remaining.pop()
+            piece, frontier = {seed}, [seed]
+            while frontier:
+                current = frontier.pop()
+                for other in neighbourIndices[indexPointer[current]:indexPointer[current + 1]]:
+                    other = int(other)
+                    if other in remaining:
+                        remaining.discard(other); piece.add(other); frontier.append(other)
+            if not first:
+                chipOf[list(piece)] = nextChip
+                nextChip += 1
+            first = False
+    tileTouches, tileZero = _chipProfiles(matrix, cost, rowGroup, chipOf)
+    members = {chip: set(np.flatnonzero(chipOf == chip).tolist()) for chip in np.unique(chipOf)}
+
+    def chipTouches(chip):
+        return tileTouches[list(members[chip])].sum(axis=0) > 0
+
+    def addedCost(tile, chip):                                              # Cost of tile t joining chip c: new groups pay the chip, the chip's groups pay t.
+        touching = chipTouches(chip)
+        tileTouching = tileTouches[tile] > 0
+        return float((tileTouching & ~touching) @ tileZero[list(members[chip])].sum(axis=0) + (touching & ~tileTouching) @ tileZero[tile])
+
+    def neighbourChips(tile, exclude):
+        return {int(chipOf[other]) for other in neighbourIndices[indexPointer[tile]:indexPointer[tile + 1]] if chipOf[other] not in exclude}
+
+    def move(tile, chip):
+        members[int(chipOf[tile])].discard(tile)
+        members[chip].add(tile)
+        chipOf[tile] = chip
+
+    def canGive(chip, tile):                                                # The chip stays connected without the tile.
+        return _isConnected(members[chip] - {tile}, indexPointer, neighbourIndices)
+
+    def placeTile(tile, sourceChip, banned):
+        """Move `tile` out of sourceChip, making room along the shortest chain if needed. True on success."""
+        direct = [chip for chip in neighbourChips(tile, banned | {sourceChip}) if len(members[chip]) < capacity]
+        if direct:
+            move(tile, min(direct, key=lambda chip: addedCost(tile, chip)))
+            return True
+        frontier = [(chip, [chip]) for chip in neighbourChips(tile, banned | {sourceChip})]
+        visited = {chip for chip, _ in frontier} | banned | {sourceChip}
+        while frontier:
+            nextFrontier = []
+            for chip, path in frontier:
+                if len(path) > maximumPathLength:
+                    continue
+                for boundary in sorted(members[chip], key=lambda t: -len(neighbourChips(t, {chip}))):
+                    for target in neighbourChips(boundary, visited - {path[-1]} | {chip} | banned | {sourceChip}):
+                        if len(members[target]) < capacity and canGive(chip, boundary):
+                            for position in range(len(path) - 1, -1, -1):  # Shift one tile along the chain, from its end back to its start.
+                                giver = path[position]
+                                receiver = target if position == len(path) - 1 else path[position + 1]
+                                candidates = [t for t in members[giver] if receiver in neighbourChips(t, {giver}) and canGive(giver, t)]
+                                if not candidates:
+                                    return False
+                                move(min(candidates, key=lambda t: addedCost(t, receiver)), receiver)
+                            move(tile, path[0])
+                            return True
+                    for target in neighbourChips(boundary, visited | banned | {sourceChip, chip}):
+                        if target not in visited:
+                            visited.add(target)
+                            nextFrontier.append((target, path + [target]))
+            frontier = nextFrontier
+        return False
+
+    for chip in sorted(members, key=lambda chip: -len(members[chip])):     # Oversized chips shed boundary tiles.
+        while len(members[chip]) > capacity:
+            boundary = [t for t in members[chip] if neighbourChips(t, {chip}) and canGive(chip, t)]
+            if not boundary or not placeTile(min(boundary, key=lambda t: -len(neighbourChips(t, {chip}))), chip, set()):
+                break
+    for face, budget in chipsPerFace.items():
+        while True:
+            faceChips = [chip for chip in members if members[chip] and faces[next(iter(members[chip]))] == face]
+            if len(faceChips) <= budget:
+                break
+            dissolving = min(faceChips, key=lambda chip: len(members[chip]))
+            snapshot = (chipOf.copy(), {chip: set(tiles) for chip, tiles in members.items()})
+            success = True
+            while members[dissolving]:
+                border = [t for t in members[dissolving] if neighbourChips(t, {dissolving})]
+                if not border or not placeTile(border[0], dissolving, {dissolving}):
+                    success = False
+                    break
+            if not success:
+                chipOf[:], members = snapshot[0], snapshot[1]
+                break
+            del members[dissolving]
+    chipOf = np.unique(chipOf, return_inverse=True)[1].ravel()
+    reached = {face: int(np.unique(chipOf[faces == face]).size) for face in chipsPerFace}
+    return chipOf, reached
+
+
+def metisChips(matrix, cost, tileKeys, chipsPerFace, capacity=defaultCapacity, neighbours=None, seed=0):
+    """Partition each face into chipsPerFace[face] connected chips with METIS (pymetis, contiguous parts, imbalance allowed up to the capacity),
+    cutting between dissimilar tiles: the weight of an edge is the cost-weighted Jaccard similarity of the two tiles' pattern sets (columns of M),
+    so that tiles vetoing the same patterns stay together. Oversized or disconnected parts, if any, go through repairChips. Returns chipOf."""
+    import pymetis
+    indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
+    faces = np.array([key[0] for key in tileKeys])
+    patternWeight = np.asarray(cost, dtype=float).mean(axis=1)
+    weightedColumns = matrix * patternWeight[:, None]
+    chipOf = np.full(len(tileKeys), -1)
+    nextChip = 0
+    for face, numberOfChips in chipsPerFace.items():
+        tiles = np.flatnonzero(faces == face)
+        local = {int(tile): position for position, tile in enumerate(tiles)}
+        adjacency, edgeWeights = [], []
+        for tile in tiles:
+            row, weights = [], []
+            for other in neighbourIndices[indexPointer[tile]:indexPointer[tile + 1]]:
+                if int(other) in local:
+                    intersection = float(weightedColumns[:, tile] @ matrix[:, other])
+                    union = float(weightedColumns[:, tile].sum() + weightedColumns[:, other].sum() - intersection)
+                    row.append(local[int(other)])
+                    weights.append(1 + int(round(1000 * (intersection / union if union > 0 else 1.0))))
+            adjacency.append(row); edgeWeights.extend(weights)
+        imbalance = max(int(np.floor(1000 * (capacity * numberOfChips / tiles.size - 1))), 1)   # METIS ufactor: allowed excess over the mean, per mille.
+        xadj = np.concatenate([[0], np.cumsum([len(row) for row in adjacency])])
+        options = pymetis.Options(ufactor=imbalance, seed=seed, contig=1)
+        _, parts = pymetis.part_graph(numberOfChips, xadj=xadj, adjncy=np.concatenate(adjacency), eweights=edgeWeights, options=options)
+        chipOf[tiles] = nextChip + np.asarray(parts)
+        nextChip += numberOfChips
+    sizes = np.bincount(chipOf)
+    needsRepair = sizes.max() > capacity or not all(_isConnected(np.flatnonzero(chipOf == chip), indexPointer, neighbourIndices)
+                                                    for chip in np.unique(chipOf))
+    if needsRepair:
+        rowGroup = np.zeros(matrix.shape[0], dtype=int)
+        chipOf = repairChips(matrix, cost, tileKeys, rowGroup, chipOf, chipsPerFace, capacity, (indexPointer, neighbourIndices))[0]
+    return chipOf
 
 
 def mergeChipsIntoBoards(matrix, cost, rowGroup, chipOf, numberOfBoards, chipLabels=None):
@@ -450,9 +621,11 @@ def annealLayout(matrix, cost, tileKeys, start, numberOfGroups, numberOfBoards, 
 
 
 def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capacity=defaultCapacity, chipsPerFace=None, groupSeeds=("greedy", "wardJaccard"),
-                   chipSeeds=("serpentine", "merge"), annealingSeeds=(0, 1, 2), steps=2_000_000, groupLabels=None, chipFaceBoards=None):
-    """The whole search: for every pattern-group seed (groups-first exact-cost greedy, or the Ward-scaled Jaccard merge) and chip seed (serpentine
-    tiling, or merging neighbouring tiles), boards by the exact-cost greedy, then simulated annealing from several random seeds. chipsPerFace is the
+                   chipSeeds=("repairedMerge", "metis", "serpentine"), annealingSeeds=(0, 1, 2), steps=2_000_000, groupLabels=None, chipFaceBoards=None):
+    """The whole search: for every pattern-group seed (groups-first exact-cost greedy, or the Ward-scaled Jaccard merge) and chip seed
+    ("repairedMerge": neighbouring tiles merged by exact cost, then repaired to the budget; "merge": the same without repair, which usually ends
+    above the budget; "metis": a similarity-weighted graph partition of each face; "serpentine": a contiguous tiling that ignores the cost), boards
+    by the exact-cost greedy, then simulated annealing from several random seeds. chipsPerFace is the
     chip budget per face (default: the minimum). groupLabels, one label per pattern (for example its FIT face), keeps each group to one label, the
     groups being named by the labels in order (numberOfGroups must equal the number of labels). Returns (best ChipLayout within the budget,
     [dict per candidate: seeds, chips, cost before and after annealing, run time])."""
@@ -482,8 +655,14 @@ def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capac
     candidates, best, bestCost = [], None, np.inf
     for groupSeed, rowGroup in groupStarts.items():
         for chipSeed in chipSeeds:
-            chipOf = serpentineChips(tileKeys, chipsPerFace) if chipSeed == "serpentine" else \
-                mergeTilesIntoChips(matrix, cost, tileKeys, rowGroup, chipsPerFace, capacity, neighbours)[0]
+            if chipSeed == "serpentine":
+                chipOf = serpentineChips(tileKeys, chipsPerFace)
+            elif chipSeed == "metis":
+                chipOf = metisChips(matrix, cost, tileKeys, chipsPerFace, capacity, neighbours)
+            else:
+                chipOf = mergeTilesIntoChips(matrix, cost, tileKeys, rowGroup, chipsPerFace, capacity, neighbours)[0]
+                if chipSeed == "repairedMerge":
+                    chipOf = repairChips(matrix, cost, tileKeys, rowGroup, chipOf, chipsPerFace, capacity, neighbours)[0]
             boardOfChip = mergeChipsIntoBoards(matrix, cost, rowGroup, chipOf, numberOfBoards)
             start = ChipLayout(rowGroup, chipOf, boardOfChip)
             for annealingSeed in annealingSeeds:

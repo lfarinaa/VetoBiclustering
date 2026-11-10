@@ -227,7 +227,8 @@ def test_jaccard_route_is_consistent():
 def test_chip_layout_respects_the_hardware():
     """Chips (chipLayout): the neighbour graph is symmetric and never joins faces; the serpentine tiling and every annealed layout keep each chip on
     one face, connected and within the capacity; the cost tracked by the annealing equals the cost recomputed from the map and is never above the
-    start; a start with more chips than the budget is brought within it."""
+    start; a start with more chips than the budget is brought within it, by the annealing penalty and by the repair (to the minimum); the METIS
+    partition meets the budget."""
     import chipLayout as cl
     matrix, tileKeys = incidence.matrix, incidence.tileKeys
     cost = np.random.default_rng(1).uniform(0.5, 2.0, matrix.shape)
@@ -250,6 +251,12 @@ def test_chip_layout_respects_the_hardware():
     trimmed, _, _ = cl.annealLayout(matrix, cost, tileKeys, overBudget, 4, 6, capacity=32, steps=300_000, seed=0, chipBudget=target)
     cl.checkLayout(trimmed, tileKeys, 32)
     assert trimmed.numberOfChips <= target, (overBudget.numberOfChips, trimmed.numberOfChips)
+    repaired, reachedAfterRepair = cl.repairChips(matrix, cost, tileKeys, rowGroup, merged, budget, 32)
+    cl.checkLayout(cl.ChipLayout(rowGroup, repaired, np.zeros(repaired.max() + 1, dtype=int)), tileKeys, 32)
+    assert reachedAfterRepair == budget, (reached, reachedAfterRepair)
+    metis = cl.metisChips(matrix, cost, tileKeys, budget, 32)
+    cl.checkLayout(cl.ChipLayout(rowGroup, metis, np.zeros(metis.max() + 1, dtype=int)), tileKeys, 32)
+    assert np.unique(metis).size <= sum(budget.values())
 
 
 
