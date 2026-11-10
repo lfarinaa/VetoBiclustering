@@ -21,6 +21,8 @@ The search merges up to a point and then anneals:
    board it touches (the board it leaves stays connected), a pattern to another group, two neighbouring tiles of different chips swapping chips
    (the way to change a full chip), and two chips on different boards swapping boards (both boards stay connected). A move that lowers the cost is kept; one that raises it by Delta is kept with probability exp(-Delta / T),
    with the temperature T lowered geometrically.
+5. a deterministic polish (polishLayout): sweeps over the chip perimeters testing every tile move, tile swap and double swap, every chip move
+   and chip swap between touching boards and every pattern move, until none lowers the cost.
 
 Defaults are placeholders until the hardware is specified: 32 inputs per chip, one fast-OR output, neighbours in the 4-connected grid of a layer and
 across the two layers (same or adjacent cell). Chips never cross a face (a constraint); boards may, where the faces touch. Naming: camelCase everywhere.
@@ -951,7 +953,7 @@ def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capac
     """The whole search: for every pattern-group seed (groups-first exact-cost greedy, or the Ward-scaled Jaccard merge) and chip seed
     ("repairedMerge": neighbouring tiles merged by exact cost, then repaired to the budget; "merge": the same without repair, which usually ends
     above the budget; "metis": a similarity-weighted graph partition of each face; "serpentine": a contiguous tiling that ignores the cost), boards
-    by the exact-cost greedy, then simulated annealing from several random seeds. The chip border penalty is relativeBorderPenalty times sum C M
+    by the exact-cost greedy, then simulated annealing from several random seeds, and a deterministic polish (polishLayout). The chip border penalty is relativeBorderPenalty times sum C M
     per border: at 1e-4 it halves the chip borders on the HERD showcase for about 0.5% of veto cost (compact chips instead of winding ones).
     With contiguousBoards (the default) every board is one connected region on the cube, for about 3% of veto cost on the showcase. chipsPerFace is the
     chip budget per face (default: the minimum). groupLabels, one label per pattern (for example its FIT face), keeps each group to one label, the
@@ -1002,11 +1004,209 @@ def findChipLayout(matrix, cost, tileKeys, numberOfGroups, numberOfBoards, capac
                                                contiguousBoards=contiguousBoards, boardGraph=boardGraph,
                                                patternLabels=groupLabels, groupLabels=labelOfGroup,
                                                chipFaceBoards=chipFaceBoards, neighbours=neighbours)
+                layout, applied, _ = polishLayout(matrix, cost, tileKeys, layout, numberOfGroups, numberOfBoards, capacity,
+                                                  relativeBorderPenalty * reference, contiguousBoards, chipBudget, neighbours=neighbours,
+                                                  boardGraph=boardGraph, seed=annealingSeed, patternLabels=groupLabels, groupLabels=labelOfGroup)
                 checkLayout(layout, tileKeys, capacity, neighbours, contiguousBoards)
-                result = dict(groupSeed=groupSeed, chipSeed=chipSeed, annealingSeed=annealingSeed, startChips=start.numberOfChips,
+                result = dict(polishChanges=sum(applied.values()), groupSeed=groupSeed, chipSeed=chipSeed, annealingSeed=annealingSeed, startChips=start.numberOfChips,
                               chips=layout.numberOfChips, startCost=relative(start), cost=relative(layout),
                               chipBorders=chipBorderLength(layout, tileKeys, neighbours), seconds=time.time() - began)
                 candidates.append(result)
                 if layout.numberOfChips <= chipBudget and result["cost"] < bestCost:
                     best, bestCost = layout, result["cost"]
     return best, candidates
+
+
+def polishLayout(matrix, cost, tileKeys, layout, numberOfGroups, numberOfBoards, capacity=defaultCapacity, borderPenalty=0.0, contiguousBoards=True,
+                 chipBudget=None, maximumSweeps=50, seed=0, neighbours=None, boardGraph=None, patternLabels=None, groupLabels=None):
+    """A deterministic descent after the annealing: sweeps over the perimeter of every chip test, for each pair of neighbouring tiles t, u of
+    different chips, moving t to u's chip, swapping t and u, and double swaps (t and a neighbour of t in its chip exchanged with u and a neighbour
+    of u in its chip, the two pairs facing each other); then every chip to a board it touches and every swap of two chips of touching boards; then
+    every pattern into every other group. Any change that lowers the cost (veto cost plus borderPenalty per chip border) and keeps the constraints
+    (capacity, connected chips, boards connected on the cube if contiguousBoards, at most chipBudget chips) is applied at once. Sweeps repeat until
+    none improves. Returns (layout, {move type: changes applied}, cost history per sweep), the cost being the veto cost relative to sum C M."""
+    indexPointer, neighbourIndices = tileNeighbours(tileKeys) if neighbours is None else neighbours
+    boardPointer, boardIndices = (boardNeighbours(tileKeys, (indexPointer, neighbourIndices)) if boardGraph is None else boardGraph)
+    rng = np.random.default_rng(seed)
+    groupOf, chipOf, boardOf = layout.rowGroup.copy(), layout.chipOf.copy(), layout.boardOfChip.copy()
+    numberOfTiles, numberOfChips = chipOf.size, int(chipOf.max()) + 1
+    roi, zeroCost = matrix.astype(np.int64), np.asarray(cost, dtype=float) * ~matrix
+    reference = float((np.asarray(cost) * matrix).sum())
+    groupOneHot = mu._oneHot(groupOf, numberOfGroups)
+    groupTile, groupTileZero = (groupOneHot.T @ roi).astype(np.int64), groupOneHot.T @ zeroCost
+    boardOfTile = lambda: boardOf[chipOf]
+    tileBoardOneHot = mu._oneHot(boardOfTile(), numberOfBoards)
+    patternBoard, patternBoardZero = (roi @ tileBoardOneHot).astype(np.int64), zeroCost @ tileBoardOneHot
+    blockCount, blockZero = (groupOneHot.T @ patternBoard).astype(np.int64), groupOneHot.T @ patternBoardZero
+    chipSize = np.bincount(chipOf, minlength=numberOfChips).astype(np.int64)
+    boardTiles = np.bincount(boardOfTile(), minlength=numberOfBoards).astype(np.int64)
+    visited, stack = np.zeros(numberOfTiles, dtype=np.bool_), np.zeros(numberOfTiles, dtype=np.int64)
+    budget = numberOfChips if chipBudget is None else chipBudget
+    patternLabel = None if patternLabels is None else np.asarray(patternLabels)
+    blockCostOf = lambda count, zero: np.where(count > 0, zero, 0.0)
+    applied = {"tile move": 0, "tile swap": 0, "double swap": 0, "chip move": 0, "chip swap": 0, "pattern move": 0}
+
+    def neighboursOf(tile):
+        return neighbourIndices[indexPointer[tile]:indexPointer[tile + 1]]
+
+    def bordersAround(tiles):
+        edges = {(min(t, int(o)), max(t, int(o))) for t in tiles for o in neighboursOf(t)}
+        return sum(1 for a, b in edges if chipOf[a] != chipOf[b])
+
+    def boardDelta(changes):
+        """Veto-cost change of moving tile groups between boards: changes = {board: (count change per group, zero change per group)}."""
+        delta = 0.0
+        for board, (countChange, zeroChange) in changes.items():
+            delta += float((blockCostOf(blockCount[:, board] + countChange, blockZero[:, board] + zeroChange)
+                            - blockCostOf(blockCount[:, board], blockZero[:, board])).sum())
+        return delta
+
+    def tryTiles(assignment, kind):
+        """Try reassigning tiles {tile: new chip}; apply and return True if allowed and the cost drops."""
+        tiles = list(assignment)
+        oldChips = {t: int(chipOf[t]) for t in tiles}
+        if all(oldChips[t] == assignment[t] for t in tiles):
+            return False
+        affectedChips = set(oldChips.values()) | set(assignment.values())
+        bordersBefore = bordersAround(tiles)
+        for t in tiles:
+            chipSize[oldChips[t]] -= 1; chipSize[assignment[t]] += 1
+            chipOf[t] = assignment[t]
+        boardChanges, affectedBoards = {}, set()
+        for t in tiles:
+            fromBoard, toBoard = boardOf[oldChips[t]], boardOf[assignment[t]]
+            if fromBoard != toBoard:
+                for board, sign in ((fromBoard, -1), (toBoard, 1)):
+                    count, zero = boardChanges.get(board, (np.zeros(numberOfGroups, dtype=np.int64), np.zeros(numberOfGroups)))
+                    boardChanges[board] = (count + sign * groupTile[:, t], zero + sign * groupTileZero[:, t])
+                    boardTiles[board] += sign
+                    affectedBoards.add(board)
+        allowed = all(chipSize[chip] <= capacity for chip in affectedChips) and int((chipSize > 0).sum()) <= budget
+        allowed = allowed and all(_chipConnected(chip, chipOf, chipSize, indexPointer, neighbourIndices, visited, stack) for chip in affectedChips)
+        if allowed and contiguousBoards:
+            allowed = all(_boardConnectedWithout(board, -1, -1, chipOf, boardOf, boardTiles, 0, boardPointer, boardIndices, visited, stack)
+                          for board in affectedBoards)
+        delta = (boardDelta(boardChanges) + borderPenalty * (bordersAround(tiles) - bordersBefore)) if allowed else 0.0
+        if allowed and delta < -1e-12:
+            for board, (countChange, zeroChange) in boardChanges.items():
+                blockCount[:, board] += countChange; blockZero[:, board] += zeroChange
+            for t in tiles:
+                fromBoard, toBoard = boardOf[oldChips[t]], boardOf[assignment[t]]
+                if fromBoard != toBoard:
+                    patternBoard[:, fromBoard] -= roi[:, t]; patternBoardZero[:, fromBoard] -= zeroCost[:, t]
+                    patternBoard[:, toBoard] += roi[:, t]; patternBoardZero[:, toBoard] += zeroCost[:, t]
+            applied[kind] += 1
+            return True
+        for t in tiles:                                                     # Undo the tentative change.
+            chipSize[assignment[t]] -= 1; chipSize[oldChips[t]] += 1
+            chipOf[t] = oldChips[t]
+        for t in tiles:
+            fromBoard, toBoard = boardOf[oldChips[t]], boardOf[assignment[t]]
+            if fromBoard != toBoard:
+                boardTiles[fromBoard] += 1; boardTiles[toBoard] -= 1
+        return False
+
+    def tryBoards(assignment, kind):
+        """Try moving whole chips to other boards {chip: new board}; apply and return True if allowed and the cost drops."""
+        chips = list(assignment)
+        oldBoards = {chip: int(boardOf[chip]) for chip in chips}
+        boardChanges = {}
+        members = {chip: np.flatnonzero(chipOf == chip) for chip in chips}
+        for chip in chips:
+            count, zero = groupTile[:, members[chip]].sum(axis=1), groupTileZero[:, members[chip]].sum(axis=1)
+            for board, sign in ((oldBoards[chip], -1), (assignment[chip], 1)):
+                previous = boardChanges.get(board, (np.zeros(numberOfGroups, dtype=np.int64), np.zeros(numberOfGroups)))
+                boardChanges[board] = (previous[0] + sign * count, previous[1] + sign * zero)
+                boardTiles[board] += sign * members[chip].size
+            boardOf[chip] = assignment[chip]
+        allowed = True
+        if contiguousBoards:
+            allowed = all(_boardConnectedWithout(board, -1, -1, chipOf, boardOf, boardTiles, 0, boardPointer, boardIndices, visited, stack)
+                          for board in boardChanges)
+        delta = boardDelta(boardChanges) if allowed else 0.0
+        if allowed and delta < -1e-12:
+            for board, (countChange, zeroChange) in boardChanges.items():
+                blockCount[:, board] += countChange; blockZero[:, board] += zeroChange
+            for chip in chips:
+                tiles = members[chip]
+                patternBoard[:, oldBoards[chip]] -= roi[:, tiles].sum(axis=1); patternBoardZero[:, oldBoards[chip]] -= zeroCost[:, tiles].sum(axis=1)
+                patternBoard[:, assignment[chip]] += roi[:, tiles].sum(axis=1); patternBoardZero[:, assignment[chip]] += zeroCost[:, tiles].sum(axis=1)
+            applied[kind] += 1
+            return True
+        for chip in chips:
+            boardOf[chip] = oldBoards[chip]
+            for board, sign in ((oldBoards[chip], 1), (assignment[chip], -1)):
+                boardTiles[board] += sign * members[chip].size
+        return False
+
+    def currentCost():
+        return float(blockCostOf(blockCount, blockZero).sum()) / reference
+
+    history = [currentCost()]
+    for sweep in range(maximumSweeps):
+        improvements = 0
+        for t in rng.permutation(numberOfTiles):
+            t = int(t)
+            for u in neighboursOf(t):
+                u = int(u)
+                own, other = int(chipOf[t]), int(chipOf[u])
+                if own == other:
+                    continue
+                if tryTiles({t: other}, "tile move") or tryTiles({t: other, u: own}, "tile swap"):
+                    improvements += 1
+                    break
+                done = False
+                for t2 in neighboursOf(t):
+                    t2 = int(t2)
+                    if chipOf[t2] != own:
+                        continue
+                    for u2 in neighboursOf(u):
+                        u2 = int(u2)
+                        if chipOf[u2] != other or u2 == t2 or u2 not in set(neighboursOf(t2).tolist()):
+                            continue
+                        if tryTiles({t: other, t2: other, u: own, u2: own}, "double swap"):
+                            improvements += 1; done = True
+                            break
+                    if done:
+                        break
+                if done:
+                    break
+        for chip in rng.permutation(numberOfChips):
+            chip = int(chip)
+            if chipSize[chip] == 0:
+                continue
+            tiles = np.flatnonzero(chipOf == chip)
+            touchingBoards = {int(boardOf[chipOf[o]]) for t in tiles for o in boardIndices[boardPointer[t]:boardPointer[t + 1]]} - {int(boardOf[chip])}
+            for board in touchingBoards:
+                if tryBoards({chip: board}, "chip move"):
+                    improvements += 1
+                    break
+                partners = {int(chipOf[o]) for t in tiles for o in boardIndices[boardPointer[t]:boardPointer[t + 1]] if boardOf[chipOf[o]] == board}
+                if any(tryBoards({chip: board, partner: int(boardOf[chip])}, "chip swap") for partner in partners):
+                    improvements += 1
+                    break
+        for i in rng.permutation(matrix.shape[0]):
+            i = int(i)
+            fromGroup = int(groupOf[i])
+            removed = (blockCostOf(blockCount[fromGroup] - patternBoard[i], blockZero[fromGroup] - patternBoardZero[i])
+                       - blockCostOf(blockCount[fromGroup], blockZero[fromGroup])).sum()
+            added = (blockCostOf(blockCount + patternBoard[i], blockZero + patternBoardZero[i]) - blockCostOf(blockCount, blockZero)).sum(axis=1)
+            delta = removed + added
+            delta[fromGroup] = np.inf
+            if groupLabels is not None:
+                delta[np.asarray(groupLabels) != patternLabel[i]] = np.inf
+            toGroup = int(np.argmin(delta))
+            if delta[toGroup] < -1e-12:
+                blockCount[fromGroup] -= patternBoard[i]; blockZero[fromGroup] -= patternBoardZero[i]
+                blockCount[toGroup] += patternBoard[i]; blockZero[toGroup] += patternBoardZero[i]
+                groupTile[fromGroup] -= roi[i]; groupTileZero[fromGroup] -= zeroCost[i]
+                groupTile[toGroup] += roi[i]; groupTileZero[toGroup] += zeroCost[i]
+                groupOf[i] = toGroup
+                applied["pattern move"] += 1
+                improvements += 1
+        history.append(currentCost())
+        if improvements == 0:
+            break
+    usedChips = np.unique(chipOf)
+    polished = ChipLayout(groupOf, np.unique(chipOf, return_inverse=True)[1].ravel(), boardOf[usedChips])
+    return polished, applied, history

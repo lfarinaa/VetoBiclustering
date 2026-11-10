@@ -228,7 +228,8 @@ def test_chip_layout_respects_the_hardware():
     """Chips (chipLayout): the neighbour graph is symmetric and never joins faces; the serpentine tiling and every annealed layout keep each chip on
     one face, connected and within the capacity; the cost tracked by the annealing equals the cost recomputed from the map and is never above the
     start; a start with more chips than the budget is brought within it, by the annealing penalty and by the repair (to the minimum); the METIS
-    partition meets the budget; with contiguous boards every board stays one region on the cube through the annealing."""
+    partition meets the budget; with contiguous boards every board stays one region on the cube through the annealing; the polish never raises
+    the cost, keeps every constraint, and its tracked cost equals the recomputed one."""
     import chipLayout as cl
     matrix, tileKeys = incidence.matrix, incidence.tileKeys
     cost = np.random.default_rng(1).uniform(0.5, 2.0, matrix.shape)
@@ -264,6 +265,11 @@ def test_chip_layout_respects_the_hardware():
     contiguous, _, _ = cl.annealLayout(matrix, cost, tileKeys, contiguousStart, 4, 6, capacity=32, steps=100_000, seed=0, chipBudget=sum(budget.values()),
                                        contiguousBoards=True, boardGraph=boardGraph)
     cl.checkLayout(contiguous, tileKeys, 32, contiguousBoards=True)
+    polished, applied, history = cl.polishLayout(matrix, cost, tileKeys, contiguous, 4, 6, capacity=32, borderPenalty=0.0,
+                                                 chipBudget=sum(budget.values()), boardGraph=boardGraph)
+    cl.checkLayout(polished, tileKeys, 32, contiguousBoards=True)
+    assert all(later <= earlier + 1e-12 for earlier, later in zip(history, history[1:]))
+    assert np.isclose(history[-1] * float((cost * matrix).sum()), mu.computeMaskCost(matrix, polished.channelMap(matrix), cost)[0])
 
 
 
