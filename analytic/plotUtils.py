@@ -192,3 +192,45 @@ def plotUnfoldedPsd(drawingAxis, valueOf, layer, norm, colourMap, title=None):
     if title:
         drawingAxis.set_title(title, fontsize=10)
     return collection
+
+
+def chipShades(layout):
+    """{chip: RGB colour}: the colour of the chip's board (categoricalColours, by board index), lightened or darkened by a step that differs between
+    the chips of the same board, so that chips stay distinguishable within a board."""
+    from matplotlib.colors import to_rgb
+    shades = {}
+    for board in np.unique(layout.boardOfChip):
+        chips = np.flatnonzero(layout.boardOfChip == board)
+        base = np.array(to_rgb(categoricalColours[board % len(categoricalColours)]))
+        for position, chip in enumerate(chips):
+            step = np.linspace(-0.35, 0.45, len(chips))[position] if len(chips) > 1 else 0.0
+            shades[chip] = base + (1 - base) * step if step > 0 else base * (1 + step)
+    return shades
+
+
+def plotChipLayout(axes, layout, tileKeys, neighbours):
+    """A chip layout (chipLayout.ChipLayout) on the unfolded PSD, one axis per layer: each tile in its chip's shade of the board colour, a line
+    between neighbouring tiles of a layer on different chips, and every face edge (no chip crosses a face). neighbours: chipLayout.tileNeighbours."""
+    from matplotlib.collections import LineCollection
+    shades = chipShades(layout)
+    chipColours = ListedColormap([shades[chip] for chip in range(layout.chipOf.max() + 1)])
+    for layer, drawingAxis in enumerate(axes):
+        valueOf = {key: layout.chipOf[index] for index, key in enumerate(tileKeys)}
+        from matplotlib.colors import Normalize
+        plotUnfoldedPsd(drawingAxis, valueOf, layer, Normalize(-0.5, layout.chipOf.max() + 0.5), chipColours, f"PSD layer {layer}")
+        segments = []
+        for index, (face, tileLayer, tileId) in enumerate(tileKeys):
+            if tileLayer != layer:
+                continue
+            for other in neighbours[1][neighbours[0][index]:neighbours[0][index + 1]]:
+                otherFace, otherLayer, otherId = tileKeys[other]
+                if otherLayer == layer and other > index and layout.chipOf[other] != layout.chipOf[index]:
+                    first, second = unfoldedPosition(face, tileId), unfoldedPosition(otherFace, otherId)
+                    middle, along = (first + second) / 2, second - first
+                    across = np.array([-along[1], along[0]]) / 2
+                    segments.append([middle - across, middle + across])
+        for face in pd.psdSides:
+            centres = np.array([unfoldedPosition(face, tileId) for tileId in range(pd.tilesPerLayer[face])])
+            (left, bottom), (right, top) = centres.min(axis=0) - 0.5, centres.max(axis=0) + 0.5
+            segments += [[(left, bottom), (right, bottom)], [(right, bottom), (right, top)], [(right, top), (left, top)], [(left, top), (left, bottom)]]
+        drawingAxis.add_collection(LineCollection(segments, colors=inkPrimary, linewidths=1.6))

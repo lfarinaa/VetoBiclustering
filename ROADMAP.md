@@ -19,3 +19,12 @@
 9. **Relaxed channel map**: soft assignments G (patterns x N_G, row softmax) and C (tiles x N_C, row softmax), sigmoid routing S, mask as a probabilistic OR, V_it = 1 - prod_{k,l} (1 - G_ik S_kl C_tl); event pass probability 1 - prod_sides [1 - prod_{t fired} (1 - V_it V_jt)] on the Geant4 photons; penalty on M (1 - V) for dropped RoI tiles. Adam in JAX, annealed temperatures or Gumbel-softmax, rounding and the exact event evaluation at the end. N_G, N_C stay an outer, discrete budget loop.
 10. **Soft thresholds**: sigmoid of the energy deposit for the PSD (0.333 MeV) and FIT (1e-4 GeV) activations, so that the thresholds get gradients.
 11. **Differentiable RoIs**: the RoI test (tile corners inside the cone through the first and last mats) as a sigmoid of the angular margin, giving gradients with respect to tile size, PSD-FIT distance, mat width and plane pitch; the L1 efficiency multiplies the effective area and the residual charged rate enters the background of AutoDetOpt's figures of merit. Geant4 events enter by reweighting, as in AutoDetOpt's stochastic part.
+
+## Readout chips
+
+12. **The number of chips as a variable**: a cost per chip in the objective instead of a fixed budget, with moves that open and close chips, so that
+    the trade-off between chips and veto cost comes out of the optimisation (one chip above the minimum lowers the HERD (5, 8) cost by 2.4%).
+13. **Board input limits** and cable reach, if the hardware has them; chips across face edges, if the readout allows it.
+14. **Budgets and figure of merit**: the other $(N_G, N_C)$ budgets with chips, and the L1 efficiency of the chip layouts on the photons.
+15. **The current HERD design**: front-end boards of 9 to 12 bars (12 on the top face, 6 per side) with calorimeter trigger patterns, against the
+    geometric matching of the HERD on-orbit trigger paper (Xu et al. 2026).
