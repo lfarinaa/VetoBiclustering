@@ -223,6 +223,36 @@ def test_jaccard_route_is_consistent():
 
 
 
+
+def test_chip_layout_respects_the_hardware():
+    """Chips (chipLayout): the neighbour graph is symmetric and never joins faces; the serpentine tiling and every annealed layout keep each chip on
+    one face, connected and within the capacity; the cost tracked by the annealing equals the cost recomputed from the map and is never above the
+    start; a start with more chips than the budget is brought within it."""
+    import chipLayout as cl
+    matrix, tileKeys = incidence.matrix, incidence.tileKeys
+    cost = np.random.default_rng(1).uniform(0.5, 2.0, matrix.shape)
+    indexPointer, neighbourIndices = cl.tileNeighbours(tileKeys)
+    pairs = {(t, int(u)) for t in range(len(tileKeys)) for u in neighbourIndices[indexPointer[t]:indexPointer[t + 1]]}
+    assert all((u, t) in pairs for t, u in pairs) and all(tileKeys[t][0] == tileKeys[u][0] for t, u in pairs)
+    budget = cl.minimumChips(tileKeys, capacity=32)
+    rowGroup = mu.mergeGreedily(matrix, 4, matrix.shape[1], cost, order="groupsFirst").rowGroup
+    serpentine = cl.serpentineChips(tileKeys, budget)
+    start = cl.ChipLayout(rowGroup, serpentine, cl.mergeChipsIntoBoards(matrix, cost, rowGroup, serpentine, 6))
+    cl.checkLayout(start, tileKeys, 32)
+    startCost = mu.computeMaskCost(matrix, start.channelMap(matrix), cost)[0]
+    layout, tracked, _ = cl.annealLayout(matrix, cost, tileKeys, start, 4, 6, capacity=32, steps=100_000, seed=0)
+    cl.checkLayout(layout, tileKeys, 32)
+    recomputed = mu.computeMaskCost(matrix, layout.channelMap(matrix), cost)[0]
+    assert np.isclose(tracked, recomputed) and recomputed <= startCost + 1e-9
+    merged, reached = cl.mergeTilesIntoChips(matrix, cost, tileKeys, rowGroup, {face: 2 * n for face, n in budget.items()}, 32)
+    overBudget = cl.ChipLayout(rowGroup, merged, cl.mergeChipsIntoBoards(matrix, cost, rowGroup, merged, 6))
+    target = overBudget.numberOfChips - 3
+    trimmed, _, _ = cl.annealLayout(matrix, cost, tileKeys, overBudget, 4, 6, capacity=32, steps=300_000, seed=0, chipBudget=target)
+    cl.checkLayout(trimmed, tileKeys, 32)
+    assert trimmed.numberOfChips <= target, (overBudget.numberOfChips, trimmed.numberOfChips)
+
+
+
 if __name__ == "__main__":
     failures = 0
     for name, check in [(name, value) for name, value in globals().items() if name.startswith("test_")]:
